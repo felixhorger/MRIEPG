@@ -2,3 +2,7 @@ name = "MRIEPG"
 uuid = "61811026-8928-4f8d-9711-35be4b9dd729"
 authors = ["Felix Horger <felix.horger@kcl.ac.uk>"]
 version = "0.1.0"
+
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MRIConst = "261c5ebf-3ec9-40d5-9fcc-d6819a7ef2d0"
