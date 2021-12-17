@@ -7,7 +7,7 @@ module MRIEPG
 	include("kmax.jl")
 	include("rf_pulse_matrix.jl")
 	include("diffusion.jl")
-	include("combined_relaxation.jl")
+	include("relaxation.jl")
 	include("simulate.jl")
 	include("driven_equilibrium.jl")
 

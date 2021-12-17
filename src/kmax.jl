@@ -8,10 +8,10 @@ end
 # Code for computing which k-states need to be considered
 # +1 in the following are due to indices starting at 1
 # No argument checks
-@inline required_states(mode::Val{:minimal}, t::Integer, N::Integer, kmax::Integer)::Integer = min(t, N-t+1, kmax+1)
-@inline required_states(mode::Val{:full}, t::Integer, N::Integer, kmax::Integer)::Integer = kmax+1
-@inline required_states(mode::Val{:full_in}, t::Integer, N::Integer, kmax::Integer)::Integer = min(kmax+1, N-t+1)
-@inline required_states(mode::Val{:full_out}, t::Integer, N::Integer, kmax::Integer)::Integer = min(t, kmax+1)
+@inline required_states(mode::Val{:minimal}, t::Integer, timepoints::Integer, kmax::Integer) = min(t, timepoints-t+1, kmax+1)
+@inline required_states(mode::Val{:full}, t::Integer, timepoints::Integer, kmax::Integer) = kmax+1
+@inline required_states(mode::Val{:full_in}, t::Integer, timepoints::Integer, kmax::Integer) = min(kmax+1, timepoints-t+1)
+@inline required_states(mode::Val{:full_out}, t::Integer, timepoints::Integer, kmax::Integer) = min(t, kmax+1)
 
 
 function approximation_error_sweep_kmax(
