@@ -45,7 +45,7 @@
 			if num_systems == 1
 				recording = copy(dropdims(memory.recording; dims=1))
 			else
-				recording = copy ∘ transpose(memory.recording)
+				recording = copy(transpose(memory.recording))
 			end
 		end
 	else
@@ -55,7 +55,6 @@
 	# Body of the function in quote
 	return quote
 
-		println(BLAS.get_num_threads())
 		# Precompute relaxation
 		relaxation, num_systems = prepare_relaxation(TR, R, G, τ, D, kmax)
 
@@ -111,7 +110,7 @@ end
 		for t = 1:timepoints
 			# How many states are involved?
 			upper = required_states(mode, t, timepoints, kmax)
-			upper_systems = upper * num_systems
+			upper_systems = num_systems * upper
 
 			# Apply pulse
 			rf_pulse_matrix(α[t], ϕ[t]; out=rf_matrix)
@@ -137,9 +136,10 @@ end
 
 			# Shift (by gradients)
 			@inbounds @views let
+				shift_upper = min(upper_systems-num_systems, total_num_states) # Maximum is total_num_states-num_systems+1
 				# F^+(k) goes to F^+(k+1), only for k > 0
-				for i = min(upper_systems+num_systems, total_num_states): -num_systems : 2*num_systems
-					#state[i:i+num_systems-1, 1] .= state[i-num_systems : i-1, 1]
+				for i = shift_upper : -num_systems : 2*num_systems
+					state[i:i+num_systems-1, 1] .= state[i-num_systems : i-1, 1]
 				end
 				# F^+(k = 0) becomes the conjugate of F^-(k = -1)
 				state[1:num_systems, 1] .= conj.(state[num_systems+1 : 2*num_systems, 2])
@@ -148,7 +148,7 @@ end
 					state[i : i+num_systems-1, 2] .= state[i+num_systems : i+2*num_systems-1, 2]
 				end
 				# F^-(k = -upper+1) becomes unpopulated
-				state[upper_systems : upper_systems+num_systems-1, 2] .= 0
+				state[upper_systems : shift_upper, 2] .= 0
 				# Longitudinal states are not getting shifted
 			end
 		end

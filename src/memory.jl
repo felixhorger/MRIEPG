@@ -66,8 +66,10 @@ function allocate_states(
 	total_num_states::Integer,
 )::NTuple{2, Matrix{ComplexF64}}
 	@assert size(initial_state) == (total_num_states, 3)
+	# Need "complicated" way so that type is ensured
 	copy_of_initial_state = Matrix{ComplexF64}(undef, total_num_states, 3)
 	copy_of_initial_state .= initial_state
+	# Can return uninitialised array, because mode is full_in
 	return Matrix{ComplexF64}(undef, total_num_states, 3), copy_of_initial_state
 end
 

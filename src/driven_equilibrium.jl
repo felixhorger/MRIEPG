@@ -1,49 +1,40 @@
 
 function driven_equilibrium(
+	cycles::Integer,
+	kmax::Integer,
 	α::AbstractVector{<: Real},
 	ϕ::AbstractVector{<: Real},
 	TR::Union{Tuple{Real, Real}, AbstractVector{<: Real}},
-	kmax::Integer,
-	cycles::Integer,
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	D::Real,
-	R1::Real,
-	R2::Real;
+	R::Union{NTuple{2, <: Real}, PartialGrid{Float64}},
 	record::Union{Val{:signal}, Val{:all}} = Val(:signal)
 )
+	# TODO: Allow record all, need generated function as well
 
 	# Only support TR = Tuple
 	TR, TW = TR # (W for waiting)
 
 	# Precompute inter-cycle relaxation
 	# G is zero, and τ is the waiting time
-	combined_relaxation_inter_cycle = compute_combined_relaxation(TW, kmax, [0.0], [TW], D, R1, R2)
-
-	# TODO: Allow record all, need generated function as well
+	relaxation_inter_cycle, _ = prepare_relaxation(TW, R, [0.0], Float64[TW], D, kmax)
 
 	# First cycle
-	signal, state = simulate(
-		Val(:full_out),
-		α, ϕ, TR,
-		kmax,
-		G, τ, D,
-		R1, R2;
-		record
-	)
+	signal, state = simulate(Val(:full_out), kmax, α, ϕ, TR, G, τ, D, R, nothing, record)
 
 	# All other cycles
 	error = Vector{Float64}(undef, cycles-1)
 	for cycle = 2:cycles
 		last_signal = copy(signal)
-		apply_combined_relaxation!(state, kmax+1, combined_relaxation_inter_cycle...)	
+		#apply_relaxation!(state, relaxation_inter_cycle, kmax+1, kmax, 0)	
 		signal, state = simulate(
 			Val(:full),
-			α, ϕ, TR,
 			kmax,
+			α, ϕ, TR,
 			G, τ, D,
-			R1, R2;
-			initial_state=state,
+			R,
+			state,
 			record
 		)
 		error[cycle-1] = norm(last_signal .- signal)
