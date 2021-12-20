@@ -3,6 +3,44 @@ include("PartialGrid.jl")
 
 # 1=longitudinal, 2=transverse
 
+@generated function prepare_relaxation(
+	TR::Union{Real, AbstractVector{<: Real}},
+	R::Union{NTuple{2, <: Real}, PartialGrid{<: Real}},
+	G::AbstractVector{<: Real},
+	τ::AbstractVector{<: Real},
+	D::Real,
+	kmax::Integer
+)
+	if R <: NTuple{2, Real}
+		check_R = quote
+			@assert R[1] > 0 && R[2] > 0
+			num_systems = 1
+		end
+	else
+		check_R = quote
+			@assert all(R.q1 .> 0) && all(R.q2 .> 0)
+			num_systems = R.num_systems
+		end
+	end
+
+	return quote
+		# Check arguments
+		all(TR .> 0)
+		$check_R
+		# G, τ, kmax checked in diffusion_b_values below
+
+		# Compute the diffusion weights
+		D1, D2 = diffusion_b_values(G, τ, kmax) # Misuse of names, these are actually b-values
+		@. D1 = diffusion_factor(D1, D) # Now the names are correct, these are diffusion damping factors
+		@. D2 = diffusion_factor(D2, D) # for the phase graph
+
+		return compute_relaxation!(TR, R, D1, D2), num_systems
+	end
+end
+
+
+
+
 # Time-constant TR and scalar R1, R2
 # Can precompute everything
 struct ConstantRelaxation
@@ -36,7 +74,7 @@ end
 	@inbounds begin
 		for (s, ED) in enumerate((relaxation.ED2, relaxation.ED2, relaxation.ED1))
 			for i = 1:upper
-				state[i, s] *= ED[mod1(i, kmax+1)]
+				state[i, s] *= ED[i]
 			end
 		end
 		state[1, 3] += relaxation.one_minus_E1
@@ -90,39 +128,58 @@ end
 
 
 
+macro iterate_partial_grid(partial_grid, loop_body_a, loop_body_b)
+	# In each iteration, the respective array elements are in i:j
+	# loop_body_a: do everything independent of q1, since q2 is constant over i:j
+	# To get the respective q2 = partial_grid.q2[n]
+	# variable names: 
+	#	- index n in the array partial_grid.q2
+	# loop_body_b: q1 varies (variable name q1)
+	# To get the respective q1 = $partial_grid.q1[m]
+	# variable names:
+	#	- index m in the array partial_grid.q1
+	#	- index l corresponding index in i:j
+	esc(quote
+		local i = 1
+		for (n, δ) = enumerate($partial_grid.Δ)
+			j = i + δ - 1
+			$loop_body_a
+			for (m, l) = enumerate(i:j)
+				$loop_body_b
+			end
+			i += δ
+		end
+	end)
+end
 
 # Macro for not duplicating the algorithm for traversing through systems
-macro iterate_partial_grid(preamble, partial_grid, longitudinal_E1, longitudinal_scalar, transverse_scalar)
+macro partial_grid_relaxation(partial_grid, compute_E1, longitudinal_scalar, transverse_scalar)
 	# These arguments are a bit handwavy
 	esc(quote
 		@inbounds @views begin
-			# Extract information from relaxation struct
-			$preamble
-			D1 = relaxation.D1[1:upper]
-			D2 = relaxation.D2[1:upper]
-
-			# Iterate systems (sorted by relaxivities)
-			# i,j refer systems (different relaxivities), but each system has K states (k = 0...kmax)
-			local i = 1
-			K = kmax + 1
-			for (n, δ) = enumerate($partial_grid.Δ)
-				j = i + δ - 1
-				# Transverse relaxation
-				Falsch: brauche nicht upper, sondern num_systems, da zuerst das system sich aendert, dann k
-				folglich nehme scalar von D_i, und array von transverse scalar und longitudinal scalar
-				for l = i:j
-					lk = (l-1) * K + 1 # One based indexing mumble mumble ...
-					state[lk:(lk + upper - 1), 1:2] .*= $transverse_scalar .* D2
-				end
-				# Longitudinal relaxation
-				for (m, l) = enumerate(i:j)
-					lk = (l-1) * K + 1
-					$longitudinal_E1
-					state[lk:(lk + upper - 1), 3] .*= $longitudinal_scalar .* D1
-					state[lk, 3] += 1 - $longitudinal_scalar
-				end
-				i += δ
+			# Iterate systems and k (system index changes fastest, then k)
+			for k = 1:upper # k not in physical units
+				# Get diffusion weights
+				D1 = relaxation.D1[k]
+				D2 = relaxation.D2[k]
+				# Offset in array due to k
+				k_offset = (k - 1) * relaxation.E.num_systems
+				@iterate_partial_grid(
+					$partial_grid,
+					state[i+k_offset : j+k_offset, 1:2] .*= $transverse_scalar * D2, # Transverse relaxation
+					begin # Longitudinal relaxation
+						$compute_E1
+						state[l + k_offset, 3] *= $longitudinal_scalar * D1
+					end
+				)
 			end
+
+			# Second part of longitudinal relaxation
+			@iterate_partial_grid(
+				$partial_grid,
+				nothing, # Nothing where q2 is involved
+				state[l, 3] += 1 - $longitudinal_scalar # Add term to Z(k = 0) state
+			)
 		end
 	end)
 end
@@ -161,12 +218,11 @@ function apply_relaxation!(
 	kmax::Int64,
 	_::Int64
 )
-	@iterate_partial_grid(
-		E = relaxation.E, # preamble: extract from relaxation struct, unsure whether this actually makes a difference
-		E, # partial_grid: contains relaxation factors exp(-TR * Ri)
+	@partial_grid_relaxation(
+		relaxation.E, # partial_grid: contains relaxation factors exp(-TR * Ri)
 		nothing, # longitudinal_E1: already precomputed
-		E.q1[m], # longitudinal_scalar: get E1
-		E.q2[n] # transverse_scalar: get E2
+		relaxation.E.q1[m], # longitudinal_scalar: get E1
+		relaxation.E.q2[n] # transverse_scalar: get E2
 	)
 	return
 end
@@ -198,12 +254,12 @@ end
 	kmax::Int64,
 	t::Int64
 )
-	@iterate_partial_grid(
-		TR = relaxation.TR[t], # preamble, get value of TR
+	error("Precompute PartialGrids for each TR")
+	@partial_grid_relaxation(
 		R, # partial_grid: relaxivities Ri
-		E1 = exp(-TR * R.q1[m]), # longitudinal_E1: precompute scalar
+		E1 = exp(-relaxation.TR[t] * R.q1[m]), # longitudinal_E1: precompute scalar
 		E1, # longitudinal_scalar
-		exp(-TR * R.q2[n]) # transverse_scalar
+		exp(-relaxation.TR[t] * R.q2[n]) # transverse_scalar
 	)
 	return
 end
