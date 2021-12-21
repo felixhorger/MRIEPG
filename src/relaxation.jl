@@ -128,30 +128,6 @@ end
 
 
 
-macro iterate_partial_grid(partial_grid, loop_body_a, loop_body_b)
-	# In each iteration, the respective array elements are in i:j
-	# loop_body_a: do everything independent of q1, since q2 is constant over i:j
-	# To get the respective q2 = partial_grid.q2[n]
-	# variable names: 
-	#	- index n in the array partial_grid.q2
-	# loop_body_b: q1 varies (variable name q1)
-	# To get the respective q1 = $partial_grid.q1[m]
-	# variable names:
-	#	- index m in the array partial_grid.q1
-	#	- index l corresponding index in i:j
-	esc(quote
-		local i = 1
-		for (n, δ) = enumerate($partial_grid.Δ)
-			j = i + δ - 1
-			$loop_body_a
-			for (m, l) = enumerate(i:j)
-				$loop_body_b
-			end
-			i += δ
-		end
-	end)
-end
-
 # Macro for not duplicating the algorithm for traversing through systems
 macro partial_grid_relaxation(partial_grid, compute_E1, longitudinal_scalar, transverse_scalar)
 	# These arguments are a bit handwavy

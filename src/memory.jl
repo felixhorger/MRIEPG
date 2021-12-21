@@ -11,7 +11,7 @@ end
 	timepoints::Integer,
 	num_systems::Integer,
 	kmax::Integer,
-	initial_state::Union{Nothing, AbstractMatrix{<: Complex}} = nothing,
+	initial_state::Union{Nothing, AbstractMatrix{<: Number}} = nothing,
 	record::Union{Val{:signal}, Val{:all}} = Val(:signal)
 )::SimulationMemory
 	return quote
@@ -62,7 +62,7 @@ end
 
 function allocate_states(
 	mode::Union{Val{:full}, Val{:full_in}},
-	initial_state::AbstractMatrix{<: Complex},
+	initial_state::AbstractMatrix{<: Number},
 	total_num_states::Integer,
 )::NTuple{2, Matrix{ComplexF64}}
 	@assert size(initial_state) == (total_num_states, 3)

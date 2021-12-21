@@ -25,7 +25,7 @@
 	τ::AbstractVector{<: Real},
 	D::Real,
 	R::Union{NTuple{2, <: Real}, PartialGrid{Float64}},
-	initial_state::Union{Nothing, AbstractMatrix{<: Complex}} = nothing,
+	initial_state::Union{Nothing, AbstractMatrix{<: Number}} = nothing,
 	record::Union{Val{:signal}, Val{:all}} = Val(:signal)
 )
 	# Select what to return: full final state or recording only
@@ -106,18 +106,21 @@ end
 		@assert all(size.(memory.two_states, 1) .>= total_num_states)
 		check_recording_size(recording, timepoints, total_num_states)
 
-		local state # Reference to the current state
 		for t = 1:timepoints
 			# How many states are involved?
 			upper = required_states(mode, t, timepoints, kmax)
 			upper_systems = num_systems * upper
 
 			# Apply pulse
-			rf_pulse_matrix(α[t], ϕ[t]; out=rf_matrix)
-			@inbounds let
-				j = mod1(t, 2)
-				state = two_states[j]
-				@views mul!(state[1:upper_systems, :], two_states[3-j][1:upper_systems, :], rf_matrix)
+			local state
+			@inbounds begin
+				# Get matrix
+				rf_pulse_matrix(α[t], ϕ[t]; out=rf_matrix)
+				# Apply it
+				let j = mod1(t, 2)
+					state = two_states[j]
+					@views mul!(state[1:upper_systems, :], two_states[3-j][1:upper_systems, :], rf_matrix)
+				end
 			end
 
 			# Store signal (F^-(k = 0)) or complete state
