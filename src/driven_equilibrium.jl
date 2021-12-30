@@ -13,6 +13,8 @@ function driven_equilibrium(
 )
 	# TODO: Allow record all, need generated function as well
 
+	# TODO: Precompute
+
 	# Only support TR = Tuple
 	TR, TW = TR # (W for waiting)
 
@@ -27,7 +29,9 @@ function driven_equilibrium(
 	error = Vector{Float64}(undef, cycles-1)
 	for cycle = 2:cycles
 		last_signal = copy(signal)
-		#apply_relaxation!(state, relaxation_inter_cycle, kmax+1, kmax, 0)	
+
+		apply_relaxation!(state, relaxation_inter_cycle, kmax+1, kmax, 0)
+
 		signal, state = simulate(
 			Val(:full),
 			kmax,

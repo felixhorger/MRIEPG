@@ -16,17 +16,17 @@ include("PartialGrid.jl")
 			@assert R[1] > 0 && R[2] > 0
 			num_systems = 1
 		end
-	else
+	elseif R <: PartialGrid{<: Real}
 		check_R = quote
-			@assert all(R.q1 .> 0) && all(R.q2 .> 0)
+			@assert R.q1[1] > 0 && R.q2[1] > 0 # q1,2 are sorted
 			num_systems = R.num_systems
 		end
 	end
 
 	return quote
 		# Check arguments
-		all(TR .> 0)
 		$check_R
+		# TR checked in compute_relaxation!
 		# G, τ, kmax checked in diffusion_b_values below
 
 		# Compute the diffusion weights
@@ -50,12 +50,13 @@ struct ConstantRelaxation
 end
 supported_kmax(relaxation::ConstantRelaxation) = length(relaxation.ED1) - 1
 
-function compute_relaxation!( # Bang because Di are used and not copied (they remain unchanged)
+function compute_relaxation!( # Bang because Di are used and not copied
 	TR::Real,
 	R::NTuple{2, <: Real}, # Required because PartialGrid can be used with MultiSystemRelaxation
 	D1::AbstractVector{<: Real},
 	D2::AbstractVector{<: Real}
 )::ConstantRelaxation
+	@assert TR > 0
 	# Compute combined effect of T1, T2 and diffusion
 	E1 = exp(-TR * R[1])
 	E2 = exp(-TR * R[2])
@@ -71,11 +72,9 @@ end
 	_::Int64
 )
 	# Fixed types because used in functions defined here, so no generic types required
-	@inbounds begin
+	@inbounds @views begin
 		for (s, ED) in enumerate((relaxation.ED2, relaxation.ED2, relaxation.ED1))
-			for i = 1:upper
-				state[i, s] *= ED[i]
-			end
+			state[1:upper, s] .*= ED[1:upper]
 		end
 		state[1, 3] += relaxation.one_minus_E1
 	end
@@ -100,6 +99,7 @@ function compute_relaxation!(
 	D1::AbstractVector{<: Real},
 	D2::AbstractVector{<: Real}
 )::TimeDependentRelaxation
+	@assert all(TR .> 0)
 	# Compute exponentials for T1, T2 relaxation factors
 	E1 = @. exp(-TR * R[1])
 	E2 = @. exp(-TR * R[2])
@@ -179,6 +179,7 @@ function compute_relaxation!(
 	D1::AbstractVector{<: Real},
 	D2::AbstractVector{<: Real}
 )
+	@assert TR > 0
 	# Compute exponentials for T1, T2 relaxation factors
 	E = PartialGrid(
 		(@. exp(-TR * R.q1)), # E1
@@ -221,6 +222,7 @@ function compute_relaxation!(
 	D1::AbstractVector{<: Real},
 	D2::AbstractVector{<: Real}
 )::MultiSystemMultiTRRelaxation
+	@assert all(TR .> 0)
 	return MultiSystemMultiTRRelaxation(TR, R, D1, D2)
 end
 @inline function apply_relaxation!(
@@ -239,7 +241,4 @@ end
 	)
 	return
 end
-
-
-
 

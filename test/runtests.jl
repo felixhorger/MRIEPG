@@ -11,7 +11,7 @@ function main()
 	# Read in matlab's results
 	file = matopen("simulation.mat")
 	kmax = Int(read(file, "kmax"))
-	matlab_epgs = read(file, "matlab_epgs")
+	epgs_matlab = read(file, "epgs_matlab")
 	α = dropdims(read(file, "alpha"); dims=2)
 	ϕ = dropdims(read(file, "phi"); dims=2)
 	TR = read(file, "TR")
@@ -31,13 +31,60 @@ function main()
 	τ = dropdims(read(file, "tau"); dims=1)
 	D = 1e-3 * read(file, "D")
 	initial_state = read(file, "initial_state")
+	D_longitudinal_matlab = read(file, "D_longitudinal")
+	D_transverse_matlab = read(file, "D_transverse")
 	close(file)
 
+
 	# Simulate in julia
+	# Diffusion factors
+	let
+		D_longitudinal, D_transverse = MRIEPG.diffusion_b_values(G, τ, kmax)
+		D_longitudinal = MRIEPG.diffusion_factor.(D_longitudinal, D)
+		D_transverse = MRIEPG.diffusion_factor.(D_transverse, D)
+		#println(D_longitudinal[1:5], D_transverse[1:5], D_longitudinal_matlab[1:5], D_transverse_matlab[1:5])
+		@test isapprox(D_longitudinal_matlab, D_longitudinal, rtol=1e-4)
+		@test isapprox(D_transverse_matlab, D_transverse, rtol=1e-4)
+	end
+
+	# Set up relaxivities
 	R = MRIEPG.PartialGrid(1 ./ T1, 1 ./ T2)
+	
+	# ConstantRelaxation
+	# TODO: Check minimal, full_in, full_out.
+	# Maybe compare original EPG with my kmax modification, then also simulate only minimal
+	let
+		epgs = Array{ComplexF64}(undef, kmax+1, 3, length(α), R.num_systems)
+		MRIEPG.@iterate_partial_grid(
+			R,
+			nothing,
+			begin
+				epgs[:, :, :, l], _ = MRIEPG.simulate(
+					Val(:full), kmax,
+					α, ϕ, TR,
+					G, τ, D,
+					(R.q1[m], R.q2[n]),
+					initial_state,
+					Val(:all)
+				)
+			end
+		)
+		#plt.figure()
+		#plt.imshow(abs.(epgs[:, 2, :, 1]))
+		#plt.imshow(imag.(epgs[:, 2, :, 1]))
+		#plt.figure()
+		#plt.imshow(imag.(epgs[:, 1, :, 1]))
+		#plt.imshow(abs.(epgs_matlab[:, 2, :, 1]))
+		#plt.figure()
+		#plt.imshow(abs.(epgs[:, 2, :, 1] - epgs_matlab[:, 2, :, 1]))
+		#plt.figure()
+		#plt.imshow(angle.(epgs[:, 2, :, 1] - epgs_matlab[:, 2, :, 1]))
+		#plt.show()
+		@test isapprox(epgs, epgs_matlab, rtol=1e-4)
+	end
+
+	#=
 	initial_state = repeat(initial_state, R.num_systems)
-	#println(MRIEPG.diffusion_factor.(MRIEPG.diffusion_b_values(G, τ, kmax)[1], D)')
-	#println(MRIEPG.diffusion_factor.(MRIEPG.diffusion_b_values(G, τ, kmax)[2], D)')
 	@time epgs, _ = MRIEPG.simulate(Val(:full), kmax, α, ϕ, TR, G, τ, D, R, initial_state, Val(:all))
 
 	# Compare
@@ -45,12 +92,14 @@ function main()
 
 	plt.figure()
 	plt.imshow(abs.(epgs[:, 2, :] .- matlab_epgs[:, 2, :]))
+	#@test isapprox(epgs, epgs_matlab; rtol=0.05)
 	
 	plt.figure()
 	plt.plot(abs.(signals[:, 1]); label="Julia")
-	plt.plot(abs.(matlab_epgs[1, 2, :]); label="Matlab")
+	plt.plot(abs.(epgs_matlab[1, 2, :]); label="Matlab")
 	plt.legend()
 	plt.show()
+	=#
 end
 
 main()
