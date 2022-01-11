@@ -5,6 +5,9 @@
 # TODO: use mode not for kmax, but for e.g. GRE, TSE, ...
 # rename mode to mask or sth
 """
+	TODO: reduce phi to phi0 and Delta phi
+	If the user has a more complicated scenario, he/she has to use multiple simulate() calls,
+	handing the final state over to the next call.
 	α, ϕ in radians
 	TR in the unit determined by R1,2
 	kmax in indices
@@ -80,7 +83,7 @@ end
 	timepoints::Int64, 
 	kmax::Int64, # I think a relaxation struct made with one kmax can be used for every kmax lower than that.
 	num_systems::Int64,
-	α::Vector{Float64},
+	α::Vector{Float64}, # Replace by RF pulse matrices, also use this in driven_equilibrium
 	ϕ::Vector{Float64},
 	relaxation::Union{
 		ConstantRelaxation,
@@ -90,6 +93,13 @@ end
 	},
 	memory::SimulationMemory
 )
+	# TODO: Not sure if @generated is required here, on the other hand this should ensure that the function
+	# is compiled for any combination of input types
+	# TODO: Make comment that this is optimised for multiple evaluations, thus is makes sense to
+	# 1) Precompute rf matrices
+	# 2) Choose relaxation size so that cache is optimally used
+	# For "playing around" or evaluating for a single R (like fitting) this is still more than fast enough.
+	# However, larger scale fitting could be more efficient if pulse matrices change (such as with relB1 as free parameter, in that case don't precompute)
 
 	return quote
 
@@ -139,20 +149,26 @@ end
 
 			# Shift (by gradients)
 			@inbounds @views let
-				shift_upper = min(upper_systems-num_systems, total_num_states) # Maximum is total_num_states-num_systems+1
 				# F^+(k) goes to F^+(k+1), only for k > 0
-				for i = shift_upper : -num_systems : 2*num_systems
+				# The first i is the first index of the k-state which is newly populated by the shift
+				#println("+") # Excuse the shotgun debug comment clutter
+				for i = min(upper_systems, total_num_states-num_systems) + 1 : -num_systems : num_systems+1
 					state[i:i+num_systems-1, 1] .= state[i-num_systems : i-1, 1]
+					#println("$(i-num_systems : i-1) -> $(i:i+num_systems-1)")
 				end
 				# F^+(k = 0) becomes the conjugate of F^-(k = -1)
 				state[1:num_systems, 1] .= conj.(state[num_systems+1 : 2*num_systems, 2])
 				# F^-(k) also goes to F^-(k+1), but k is ordered the other way around in the array
+				#println("-")
 				for i = 1:num_systems:(upper_systems-num_systems)
 					state[i : i+num_systems-1, 2] .= state[i+num_systems : i+2*num_systems-1, 2]
+					#println("$(i+num_systems : i+2*num_systems-1) -> $(i : i+num_systems-1)")
 				end
 				# F^-(k = -upper+1) becomes unpopulated
-				state[upper_systems : shift_upper, 2] .= 0
+				state[upper_systems-num_systems+1 : upper_systems, 2] .= 0
+				#println("$(upper_systems-num_systems+1 : upper_systems) -> 0")
 				# Longitudinal states are not getting shifted
+				#sleep(10)
 			end
 		end
 	end

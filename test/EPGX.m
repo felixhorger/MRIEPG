@@ -2,17 +2,17 @@
 function epgs_matlab = EPGX()
 	% Requires: Fork of the EPG-X matlab package (https://github.com/felixhorger/EPG-X)
 
-	timepoints = 200;
+	timepoints = 100;
 	alpha = pi/2 * ones(timepoints, 1);
 	phi = 2 * pi * ones(timepoints, 1);
 	TR = 20.0; % [ms]
-	N = 2;
+	N = 10;
 	T1 = linspace(100, 5000, N);
 	T2 = linspace(10, 2500, N);
 
 	G = [0.0, 10.0];
 	tau = [15.0, TR - 15.0];
-	D = 1000e-9;
+	D = 2e-9;
 	diffusion.G = G;
 	diffusion.tau = tau;
 	diffusion.D = D;

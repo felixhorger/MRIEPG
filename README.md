@@ -1,5 +1,5 @@
-MRIEPG
-------
+MRIEPG.jl
+=========
 
 Extended phase graph simulations for solving the Bloch equations, central to magnetic resonance imaging.
 
