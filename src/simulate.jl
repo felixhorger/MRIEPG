@@ -83,8 +83,8 @@ end
 	timepoints::Int64, 
 	kmax::Int64, # I think a relaxation struct made with one kmax can be used for every kmax lower than that.
 	num_systems::Int64,
-	α::Vector{Float64}, # Replace by RF pulse matrices, also use this in driven_equilibrium
-	ϕ::Vector{Float64},
+	α::AbstractVector{Float64}, # Replace by RF pulse matrices, also use this in driven_equilibrium
+	ϕ::AbstractVector{Float64},
 	relaxation::Union{
 		ConstantRelaxation,
 		TimeDependentRelaxation,

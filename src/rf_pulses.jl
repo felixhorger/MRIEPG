@@ -22,3 +22,7 @@ function rf_pulse_matrix(
 	return out
 end
 
+@inline function rewind_phase!(signal::Vector{<: Complex}, ϕ::Vector{<: Real})::Vector{<: Complex}
+	@. signal *= exp(im * ϕ)
+end
+
