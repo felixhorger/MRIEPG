@@ -42,7 +42,6 @@ function main()
 		D_longitudinal, D_transverse = MRIEPG.diffusion_b_values(G, τ, kmax)
 		D_longitudinal = MRIEPG.diffusion_factor.(D_longitudinal, D)
 		D_transverse = MRIEPG.diffusion_factor.(D_transverse, D)
-		#println(D_longitudinal[1:5], D_transverse[1:5], D_longitudinal_matlab[1:5], D_transverse_matlab[1:5])
 		@test isapprox(D_longitudinal_matlab, D_longitudinal, rtol=1e-4)
 		@test isapprox(D_transverse_matlab, D_transverse, rtol=1e-4)
 	end
@@ -83,12 +82,44 @@ function main()
 		@test isapprox(epgs, epgs_matlab, rtol=1e-4)
 	end
 
+	# MultiTRRelaxation
+	# TODO: Check minimal, full_in, full_out.
+	let
+		epgs = Array{ComplexF64}(undef, kmax+1, 3, length(α), R.num_systems)
+		MRIEPG.@iterate_partial_grid(
+			R,
+			nothing,
+			begin
+				epgs[:, :, :, l], _ = MRIEPG.simulate(
+					Val(:full), kmax,
+					α, ϕ, fill(TR, length(α)),
+					G, τ, D,
+					(R.q1[m], R.q2[n]),
+					initial_state,
+					Val(:all)
+				)
+			end
+		)
+		#plt.figure()
+		#plt.imshow(abs.(epgs[:, 2, :, 1]))
+		#plt.imshow(imag.(epgs[:, 2, :, 1]))
+		#plt.figure()
+		#plt.imshow(imag.(epgs[:, 1, :, 1]))
+		#plt.imshow(abs.(epgs_matlab[:, 2, :, 1]))
+		#plt.figure()
+		#plt.imshow(abs.(epgs[:, 2, :, 1] - epgs_matlab[:, 2, :, 1]))
+		#plt.figure()
+		#plt.imshow(angle.(epgs[:, 2, :, 1] - epgs_matlab[:, 2, :, 1]))
+		#plt.show()
+		@test isapprox(epgs, epgs_matlab, rtol=1e-4)
+	end
+
 	#=
 	initial_state = repeat(initial_state, R.num_systems)
 	@time epgs, _ = MRIEPG.simulate(Val(:full), kmax, α, ϕ, TR, G, τ, D, R, initial_state, Val(:all))
 
 	# Compare
-	signals = transpose(@view epgs[1:R.num_systems, 2, :])
+	@views signals = transpose(epgs[1:R.num_systems, 2, :])
 
 	plt.figure()
 	plt.imshow(abs.(epgs[:, 2, :] .- matlab_epgs[:, 2, :]))

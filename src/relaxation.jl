@@ -1,46 +1,8 @@
 
 include("PartialGrid.jl")
 
+
 # 1=longitudinal, 2=transverse
-
-@generated function prepare_relaxation(
-	TR::Union{Real, AbstractVector{<: Real}},
-	R::Union{NTuple{2, <: Real}, PartialGrid{<: Real}},
-	G::AbstractVector{<: Real},
-	τ::AbstractVector{<: Real},
-	D::Real,
-	kmax::Integer
-)
-	if R <: NTuple{2, Real}
-		check_R = quote
-			@assert R[1] > 0 && R[2] > 0
-			num_systems = 1
-		end
-	elseif R <: PartialGrid{<: Real}
-		check_R = quote
-			@assert R.q1[1] > 0 && R.q2[1] > 0 # q1,2 are sorted
-			num_systems = R.num_systems
-		end
-	end
-
-	return quote
-		# Check arguments
-		$check_R
-		# TR checked in compute_relaxation!
-		# G, τ, kmax checked in diffusion_b_values below
-
-		# Compute the diffusion weights
-		D1, D2 = diffusion_b_values(G, τ, kmax) # Misuse of names, these are actually b-values
-		@. D1 = diffusion_factor(D1, D) # Now the names are correct, these are diffusion damping factors
-		@. D2 = diffusion_factor(D2, D) # for the phase graph
-
-		return compute_relaxation!(TR, R, D1, D2), num_systems
-	end
-end
-
-
-
-
 # Time-constant TR and scalar R1, R2
 # Can precompute everything
 struct ConstantRelaxation
@@ -49,20 +11,28 @@ struct ConstantRelaxation
 	ED2::Vector{Float64}
 end
 supported_kmax(relaxation::ConstantRelaxation) = length(relaxation.ED1) - 1
-
+function check_relaxation(relaxation::ConstantRelaxation, timepoints::Integer, kmax::Integer)
+	if any(length.((relaxation.ED1, relaxation.ED2)) .<= kmax)
+		error("kmax of the relaxation data structure is too small.")
+	end
+	return
+end
 function compute_relaxation!( # Bang because Di are used and not copied
 	TR::Real,
 	R::NTuple{2, <: Real}, # Required because PartialGrid can be used with MultiSystemRelaxation
-	D1::AbstractVector{<: Real},
-	D2::AbstractVector{<: Real}
-)::ConstantRelaxation
+	G::AbstractVector{<: Real},
+	τ::AbstractVector{<: Real},
+	D::Real,
+	kmax::Integer
+)::Tuple{ConstantRelaxation, Int64}
 	@assert TR > 0
 	# Compute combined effect of T1, T2 and diffusion
 	E1 = exp(-TR * R[1])
 	E2 = exp(-TR * R[2])
-	@. D1 = E1 * D1
-	@. D2 = E2 * D2
-	return ConstantRelaxation(1.0 - E1, D1, D2)
+	b_longitudinal, b_transverse = diffusion_b_values(G, τ, kmax)
+	ED1 = (@. b_longitudinal = E1 * diffusion_factor(b_longitudinal, D))
+	ED2 = (@. b_transverse = E2 * diffusion_factor(b_transverse, D))
+	return ConstantRelaxation(1 - E1, ED1, ED2), 1
 end
 @inline function apply_relaxation!(
 	state::AbstractMatrix{ComplexF64},
@@ -72,7 +42,7 @@ end
 	_::Int64
 )
 	# Fixed types because used in functions defined here, so no generic types required
-	@inbounds @views begin
+	 @views begin
 		for (s, ED) in enumerate((relaxation.ED2, relaxation.ED2, relaxation.ED1))
 			state[1:upper, s] .*= ED[1:upper]
 		end
@@ -85,35 +55,69 @@ end
 
 # Scalar R1, R2 and Vector valued TR
 # Can precompute exp(-TR * Ri) and Di, but not their combination
-struct TimeDependentRelaxation
+struct MultiTRRelaxation
 	E1::Vector{Float64} # Axes goes along time direction
 	E2::Vector{Float64}
-	D1::Vector{Float64} # Axes goes along k direction
-	D2::Vector{Float64}
+	D1::Matrix{Float64} # Axes goes along k direction
+	D2::Matrix{Float64}
 end
-supported_kmax(relaxation::TimeDependentRelaxation) = length(relaxation.D1) - 1
-
+supported_kmax(relaxation::MultiTRRelaxation) = size(relaxation.D1, 1) - 1
+function check_relaxation(relaxation::MultiTRRelaxation, timepoints::Integer, kmax::Integer)
+	if any(
+		(
+			length.((relaxation.E1, relaxation.E2))...,
+			size.((relaxation.D1, relaxation.D2), 2)...
+		) .!= timepoints
+	)
+		error("Relaxation data structure does not have a matching time axis.")
+	end
+	if any(size.((relaxation.D1, relaxation.D2), 1) .<= kmax)
+		error("kmax of the relaxation data structure is too small.")
+	end
+	return
+end
 function compute_relaxation!(
 	TR::AbstractVector{<: Real}, 
 	R::NTuple{2, <: Real}, # Required because PartialGrid can be used with MultiSystemRelaxation
-	D1::AbstractVector{<: Real},
-	D2::AbstractVector{<: Real}
-)::TimeDependentRelaxation
+	G::AbstractVector{<: Real},
+	τ::AbstractVector{<: Real},
+	D::Real,
+	kmax::Integer
+)::Tuple{MultiTRRelaxation, Int64}
+
+	# Check arguments
 	@assert all(TR .> 0)
+	@assert R[1] > 0 && R[2] > 0
+	# G, τ, kmax checked in diffusion_b_values below
+
+	timepoints = length(TR)
+
+	# Compute the diffusion weights
+	b_longitudinal_per_time, b_transverse_contribution = prepare_diffusion_b_values(G, τ, kmax)
+	D1 = Matrix{Float64}(undef, kmax+1, timepoints)
+	D2 = Matrix{Float64}(undef, kmax+1, timepoints)
+	 @views for t = 1:timepoints
+		@. D1[:, t] = b_longitudinal_per_time * TR[t]
+		@. D2[:, t] = D1[:, t] + b_transverse_contribution
+		@. D1[:, t] = diffusion_factor(D1[:, t], D)
+		@. D2[:, t] = diffusion_factor(D2[:, t], D)
+	end
+
 	# Compute exponentials for T1, T2 relaxation factors
 	E1 = @. exp(-TR * R[1])
 	E2 = @. exp(-TR * R[2])
 
-	return TimeDependentRelaxation(E1, E2, D1, D2)
+	return MultiTRRelaxation(E1, E2, D1, D2), 1 # num_systems
 end
+
 @inline function apply_relaxation!(
 	state::Matrix{ComplexF64},
-	relaxation::TimeDependentRelaxation,
+	relaxation::MultiTRRelaxation,
 	upper::Int64,
 	_::Int64,
 	t::Int64
 )
-	@inbounds @views let
+	 @views let
 		E1 = relaxation.E1[t] 
 		E2 = relaxation.E2[t] 
 		# Apparently this does not allocate memory for the views ... but haven't checked in this scenario,
@@ -132,7 +136,7 @@ end
 macro partial_grid_relaxation(partial_grid, compute_E1, longitudinal_scalar, transverse_scalar)
 	# These arguments are a bit handwavy
 	esc(quote
-		@inbounds @views begin
+		 @views begin
 			# Iterate systems and k (system index changes fastest, then k)
 			for k = 1:upper # k not in physical units
 				# Get diffusion weights
@@ -178,16 +182,20 @@ function compute_relaxation!(
 	R::PartialGrid{<: Real}, # Relaxivities
 	D1::AbstractVector{<: Real},
 	D2::AbstractVector{<: Real}
-)
+)::Tuple{MultiSystemRelaxation, Int64}
 	@assert TR > 0
+	@assert R.q1[1] > 0 && R.q2[1] > 0 # q1,2 are sorted
+
 	# Compute exponentials for T1, T2 relaxation factors
 	E = PartialGrid(
 		(@. exp(-TR * R.q1)), # E1
 		(@. exp(-TR * R.q2)), # E2
 		R.Δ
 	)
-	return MultiSystemRelaxation(E, D1, D2)
+
+	return MultiSystemRelaxation(E, D1, D2), R.num_systems
 end
+
 function apply_relaxation!(
 	state::Matrix{ComplexF64},
 	relaxation::MultiSystemRelaxation,
@@ -222,6 +230,7 @@ function compute_relaxation!(
 	D1::AbstractVector{<: Real},
 	D2::AbstractVector{<: Real}
 )::MultiSystemMultiTRRelaxation
+	error("Not implemented")
 	@assert all(TR .> 0)
 	return MultiSystemMultiTRRelaxation(TR, R, D1, D2)
 end
@@ -232,6 +241,7 @@ end
 	kmax::Int64,
 	t::Int64
 )
+	error("Not implemented")
 	error("Precompute PartialGrids for each TR")
 	@partial_grid_relaxation(
 		R, # partial_grid: relaxivities Ri
@@ -241,4 +251,5 @@ end
 	)
 	return
 end
+
 

@@ -1,25 +1,10 @@
 
 """
-	b-values
 
-	gradient G in mT
-	duration τ in ms
-	k in [index]
-	K0 in rad / m
-	Apply function multiple times and set proper Δk 
+	Useful if the repetition time changes, but the gradients are the same.
 
-	Definition
-	k: index in phase graph, multiples of the total shift
-	produced by all gradients together, unit is index.
-	K: The shift in physical units (radians/m), can be non-integer
-	multiples of the shift produces by all gradients together.
-	sum(τ) = TR
-
-	TODO: Split into individual gradients, because rf pulses might come inbetween!
-
-	returns b_longitudinal, b_transverse in units of (rad/m)^2 * s
 """
-function diffusion_b_values(
+function prepare_diffusion_b_values(
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	kmax::Integer
@@ -35,7 +20,8 @@ function diffusion_b_values(
 	ΔK = sum(dK)
 
 	# For longitudinal states, K remains constant even when gradients are non-zero.
-	b_longitudinal = (0:kmax).^2 .* (ΔK^2 * sum(τ))
+	# Compute diffusion weighting per time (needs to be multiplied by time interval to get b-value)
+	b_longitudinal_per_time = (0:kmax).^2 .* ΔK^2
 
 	# For transverse states, K changes while the gradients are non-zero.
 	# Thus, individual parts of the gradient shape cannot be considered independently.
@@ -47,23 +33,66 @@ function diffusion_b_values(
 			  + k * [ΔK * sum_{gradients} τ (2K0 + dK)]				# =: k * χ
 			  + [sum_{gradients} τ (K0^2 + dK^2 / 3 + K0 * dK)]		# =: ξ
 	=#
-	local ξ, χ
+	# Difference to the longitudinal b-values due to changing gradients
+	local b_transverse_contribution
 	let
 		K0 = Vector{Float64}(undef, length(G))
 		tmp = Vector{Float64}(undef, length(G))
 		# Compute K0, inital K produced by each gradient lobe
 		K0[1] = 0
-		K0[2:end] = cumsum(@view dK[1:end-1]) 
+		@views K0[2:end] .= cumsum(dK[1:end-1])
 		# Compute elementwise ξ = sum_{gradients} τ * (K0^2 + 3 dK^2 + K0 * dK)
 		@. tmp = K0^2 + dK^2 / 3 + K0 * dK
-		tmp .*= τ # TODO: Needs to be split bc otherwise julia allocates memory, why?
+		tmp .*= τ # Must be separate from the line above, because otherwise julia allocates memory, why?
 		ξ = sum(tmp)
 		# Reuse tmp to compute χ = ΔK * sum_{gradients} τ * (2K0 + dK)
 		@. tmp = τ * (2K0 + dK)
 		χ = ΔK * sum(tmp)
+		b_transverse_contribution = χ .* (0:kmax) .+ ξ
 	end
 
-	b_transverse = @. b_longitudinal + χ * (0:kmax) + ξ
+	return b_longitudinal_per_time, b_transverse_contribution
+end
+
+"""
+	b-values
+
+	gradient G in mT
+	duration τ in ms
+	k in [index]
+	K0 in rad / m
+	Apply function multiple times and set proper Δk
+
+	Definition
+	k: index in phase graph, multiples of the total shift
+	produced by all gradients together, unit is index.
+	K: The shift in physical units (radians/m), can be non-integer
+	multiples of the shift produces by all gradients together.
+	sum(τ) = TR
+
+	TODO: Split into individual gradients, because rf pulses might come inbetween!
+	Doesn't happen that often, ignore for now
+
+	returns b_longitudinal, b_transverse in units of (rad/m)^2 * s
+"""
+function diffusion_b_values(
+	G::AbstractVector{<: Real},
+	τ::AbstractVector{<: Real},
+	kmax::Integer
+)::Tuple{Vector{Float64}, Vector{Float64}}
+	# Note: The split between this function and prepare_diffusion_b_values is required for settings where the
+	# time interval is extended in the end, without changing gradients. In that case not everything must be
+	# recomputed.
+
+	local b_longitudinal, b_transverse
+	let
+		b_longitudinal_per_time, b_transverse_contribution = prepare_diffusion_b_values(G, τ, kmax)
+		# Use the specific duration of this time interval
+		# Longitudinal
+		b_longitudinal = (b_longitudinal_per_time .*= sum(τ))
+		# Transverse
+		b_transverse = (b_transverse_contribution .+= b_longitudinal)
+	end
 
 	return b_longitudinal, b_transverse
 end

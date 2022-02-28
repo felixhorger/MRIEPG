@@ -2,7 +2,6 @@
 # Prepare a single simulation run
 # This can be in struct because it should be hidden to the user, no parameters should be set here
 struct SimulationMemory
-	rf_matrix::Matrix{ComplexF64}
 	two_states::NTuple{2, Matrix{ComplexF64}}
 	recording::Array{ComplexF64}
 end
@@ -24,10 +23,7 @@ end
 		# Allocate memory for recording EPG states in time
 		recording = allocate_recording(record, timepoints, num_systems, total_num_states)
 
-		# Allocate memory for the pulse matrix
-		rf_matrix = Matrix{ComplexF64}(undef, 3, 3)
-
-		return SimulationMemory(rf_matrix, two_states, recording)
+		return SimulationMemory(two_states, recording)
 	end
 end
 
