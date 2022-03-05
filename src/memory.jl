@@ -3,7 +3,7 @@
 # This can be in struct because it should be hidden to the user, no parameters should be set here
 struct SimulationMemory
 	two_states::NTuple{2, Matrix{ComplexF64}}
-	recording::Array{ComplexF64}
+	recording::Union{Matrix{ComplexF64}, Array{ComplexF64, 3}}
 end
 @generated function allocate_memory(
 	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
@@ -86,7 +86,7 @@ end
 	_::Integer,
 	number_of_states::Integer
 )
-	Array{ComplexF64}(undef, number_of_states, 3, timepoints)
+	Array{ComplexF64, 3}(undef, number_of_states, 3, timepoints)
 end
 
 # Function to record the state of the graph, depending on record mode

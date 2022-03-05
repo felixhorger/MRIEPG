@@ -47,16 +47,18 @@ function main()
 	end
 
 	# Set up relaxivities
-	R = MRIEPG.PartialGrid(1 ./ T1, 1 ./ T2)
+	R = MRIEPG.TriangularGrids.TriangularGrid(1 ./ reverse(T1), 1 ./ reverse(T2))
 	
 	# ConstantRelaxation
 	# TODO: Check minimal, full_in, full_out.
 	# Maybe compare original EPG with my kmax modification, then also simulate only minimal
 	let
-		epgs = Array{ComplexF64}(undef, kmax+1, 3, length(α), R.num_systems)
-		MRIEPG.@iterate_partial_grid(
+		epgs = Array{ComplexF64}(undef, kmax+1, 3, length(α), R.N)
+		MRIEPG.TriangularGrids.@iterate(
 			R,
+			# Outer loop
 			nothing,
+			# Inner loop
 			begin
 				epgs[:, :, :, l], _ = MRIEPG.simulate(
 					Val(:full), kmax,
@@ -85,8 +87,8 @@ function main()
 	# MultiTRRelaxation
 	# TODO: Check minimal, full_in, full_out.
 	let
-		epgs = Array{ComplexF64}(undef, kmax+1, 3, length(α), R.num_systems)
-		MRIEPG.@iterate_partial_grid(
+		epgs = Array{ComplexF64}(undef, kmax+1, 3, length(α), R.N)
+		MRIEPG.TriangularGrids.@iterate(
 			R,
 			nothing,
 			begin
@@ -100,26 +102,32 @@ function main()
 				)
 			end
 		)
-		#plt.figure()
-		#plt.imshow(abs.(epgs[:, 2, :, 1]))
-		#plt.imshow(imag.(epgs[:, 2, :, 1]))
-		#plt.figure()
-		#plt.imshow(imag.(epgs[:, 1, :, 1]))
-		#plt.imshow(abs.(epgs_matlab[:, 2, :, 1]))
-		#plt.figure()
-		#plt.imshow(abs.(epgs[:, 2, :, 1] - epgs_matlab[:, 2, :, 1]))
-		#plt.figure()
-		#plt.imshow(angle.(epgs[:, 2, :, 1] - epgs_matlab[:, 2, :, 1]))
-		#plt.show()
+		@test isapprox(epgs, epgs_matlab, rtol=1e-4)
+	end
+
+
+	# MultiSystemRelaxation
+	# TODO: Check minimal, full_in, full_out.
+	let
+		epgs, _ = MRIEPG.simulate(
+			Val(:full), kmax,
+			α, ϕ, TR,
+			G, τ, D,
+			R,
+			repeat(initial_state, inner=(R.N, 1)),
+			Val(:all)
+		)
+		epgs = reshape(epgs, (R.N, kmax+1, 3, length(α)))
+		epgs = permutedims(epgs, (2, 3, 4, 1))
 		@test isapprox(epgs, epgs_matlab, rtol=1e-4)
 	end
 
 	#=
-	initial_state = repeat(initial_state, R.num_systems)
+	initial_state = repeat(initial_state, R.N)
 	@time epgs, _ = MRIEPG.simulate(Val(:full), kmax, α, ϕ, TR, G, τ, D, R, initial_state, Val(:all))
 
 	# Compare
-	@views signals = transpose(epgs[1:R.num_systems, 2, :])
+	@views signals = transpose(epgs[1:R.N, 2, :])
 
 	plt.figure()
 	plt.imshow(abs.(epgs[:, 2, :] .- matlab_epgs[:, 2, :]))

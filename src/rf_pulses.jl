@@ -1,10 +1,10 @@
 
-function rf_pulse_matrix(
+# TODO: static array
+function rf_pulse_matrix!(
+	out::AbstractMatrix{<: Complex},
 	α::Real,
-	ϕ::Real;
-	out=Matrix{ComplexF64}(undef, 3, 3)
-)::Matrix{ComplexF64}
-	# TODO: static array
+	ϕ::Real
+)::AbstractMatrix{<: Complex}
 	# This is the transposed version of the one from Weigel's paper
 	phase_factor = exp(im * ϕ)
 	phase_factor_squared = phase_factor^2
@@ -24,6 +24,11 @@ function rf_pulse_matrix(
 	end
 	return out
 end
+@inline function rf_pulse_matrix(α::Real, ϕ::Real)::Matrix{ComplexF64}
+	out = Matrix{ComplexF64}(undef, 3, 3)
+	rf_pulse_matrix!(out, α, ϕ)
+end
+
 
 @inline function rewind_phase!(signal::Vector{<: Complex}, ϕ::Vector{<: Real})::Vector{<: Complex}
 	@. signal *= exp(im * ϕ)

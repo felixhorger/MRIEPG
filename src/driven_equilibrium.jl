@@ -8,7 +8,7 @@ function driven_equilibrium(
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	D::Real,
-	R::Union{NTuple{2, <: Real}, PartialGrid{Float64}},
+	R::Union{NTuple{2, <: Real}, TriangularGrid{Float64}},
 	record::Union{Val{:signal}, Val{:all}} = Val(:signal)
 )
 	# TODO: Allow record all, need generated function as well
@@ -20,7 +20,7 @@ function driven_equilibrium(
 
 	# Precompute inter-cycle relaxation
 	# G is zero, and τ is the waiting time
-	relaxation_inter_cycle, _ = prepare_relaxation(TW, R, [0.0], Float64[TW], D, kmax)
+	relaxation_inter_cycle, _ = compute_relaxation!(TW, R, [0.0], Float64[TW], D, kmax)
 
 	# First cycle
 	signal, state = simulate(Val(:full_out), kmax, α, ϕ, TR, G, τ, D, R, nothing, record)

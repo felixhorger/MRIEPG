@@ -25,7 +25,7 @@
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	D::Real,
-	R::Union{NTuple{2, <: Real}, PartialGrid{Float64}},
+	R::Union{NTuple{2, <: Real}, TriangularGrid{Float64}},
 	initial_state::Union{Nothing, AbstractMatrix{<: Number}} = nothing,
 	record::Union{Val{:signal}, Val{:all}} = Val(:signal)
 )
@@ -42,34 +42,29 @@
 
 	# Drop singleton dimension or transpose recording after simulation finished
 	if record <: Val{:signal}
-		reshape_recording = quote
-			if num_systems == 1
-				recording = copy(dropdims(memory.recording; dims=1))
-			else
-				recording = copy(transpose(memory.recording))
-			end
-		end
+		reshape_recording = :( recording = permutedims(memory.recording, (2,1)) )
 	else
-		reshape_recording = :(recording = copy(memory.recording))
+		reshape_recording = :( recording = copy(memory.recording) )
 	end
 
 	# Body of the function in quote
 	return quote
 
 		# Precompute relaxation
-		relaxation, num_systems = compute_relaxation!(TR, R, G, τ, D, kmax)
+		relaxation, num_systems = compute_relaxation(TR, R, G, τ, D, kmax)
 
-		# Get number of timepoints to simulate
+		# Get number of timepoints and check size of ϕ
 		timepoints = length(α)
-
-		# Allocate memory for the simulation
-		memory = allocate_memory(mode, timepoints, num_systems, kmax, initial_state, record)
+		@assert length(ϕ) == timepoints
 
 		# Precompute pulse matrices
 		rf_matrices = Array{ComplexF64, 3}(undef, 3, 3, timepoints)
 		 @views for t = 1:timepoints
-			rf_pulse_matrix(α[t], ϕ[t]; out=rf_matrices[:, :, t])
+			rf_pulse_matrix!(rf_matrices[:, :, t], α[t], ϕ[t])
 		end
+
+		# Allocate memory for the simulation
+		memory = allocate_memory(mode, timepoints, num_systems, kmax, initial_state, record)
 
 		# Simulate
 		simulate!(mode, kmax, timepoints, rf_matrices, relaxation, num_systems, memory)
@@ -82,17 +77,12 @@ end
 # Check if initial state and mode are compatible
 
 
-@generated function simulate!(
+function simulate!(
 	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
 	kmax::Int64, # I think a relaxation struct made with one kmax can be used for every kmax lower than that.
 	timepoints::Int64,
 	rf_matrices::Array{ComplexF64, 3},
-	relaxation::Union{
-		ConstantRelaxation,
-		MultiTRRelaxation,
-		MultiSystemRelaxation,
-		MultiSystemMultiTRRelaxation
-	},
+	relaxation::Union{ConstantRelaxation, MultiTRRelaxation, MultiSystemRelaxation, MultiSystemMultiTRRelaxation},
 	num_systems::Int64,
 	memory::SimulationMemory
 )
@@ -104,98 +94,94 @@ end
 	# However, larger scale fitting could be more efficient if pulse matrices change (such as with relB1 as free parameter, in that case don't precompute)
 	# For the future, make a function that computes everything on demand, no precomputation
 
-	return quote
 
-		# Alias into SimulationMemory struct
-		two_states = memory.two_states
-		recording = memory.recording
+	# Alias into SimulationMemory struct
+	two_states = memory.two_states
+	recording = memory.recording
 
-		# Check arguments
-		@assert size(rf_matrices, 1) == size(rf_matrices, 2) == 3
-		@assert size(rf_matrices, 3) == timepoints
-		total_num_states = num_systems * (kmax+1)
-		check_relaxation(relaxation, timepoints, kmax)
-		@assert all(size.(memory.two_states, 1) .>= total_num_states)
-		check_recording_size(recording, timepoints, total_num_states)
+	# Check arguments
+	@assert size(rf_matrices, 1) == size(rf_matrices, 2) == 3
+	@assert size(rf_matrices, 3) == timepoints
+	total_num_states = num_systems * (kmax+1)
+	check_relaxation(relaxation, timepoints, kmax)
+	@assert all(size.(memory.two_states, 1) .>= total_num_states)
+	check_recording_size(recording, timepoints, total_num_states)
 
-		 @views for t = 1:timepoints
-			j = mod1(t, 2)
-			upper = required_states(mode, t, timepoints, kmax)
-			simulate!(
-				mode, kmax, upper,
-				rf_matrices[:, :, t],
-				relaxation, num_systems,
-				two_states[3-j], two_states[j],
-				t, recording
-			)
-		end
+	 for t = 1:timepoints
+		j = mod1(t, 2)
+		upper = required_states(mode, t, timepoints, kmax)
+		simulate!(
+			mode, kmax, upper, t,
+			rf_matrices,
+			relaxation, num_systems,
+			two_states[3-j], two_states[j],
+			recording
+		)
 	end
+	return
 end
 
-@inline @generated function simulate!(
+function simulate!(
 	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
 	kmax::Int64, # I think a relaxation struct made with a spcific kmax can be used for every kmax lower than that.
 	upper::Int64,
-	rf_matrix::AbstractMatrix{ComplexF64},
-	relaxation::Union{
-		ConstantRelaxation,
-		MultiTRRelaxation,
-		MultiSystemRelaxation,
-		MultiSystemMultiTRRelaxation
-	},
+	t::Int64,
+	rf_matrices::Array{ComplexF64, 3},
+	relaxation::Union{ConstantRelaxation, MultiTRRelaxation, MultiSystemRelaxation, MultiSystemMultiTRRelaxation},
 	num_systems::Int64,
 	source_state::Matrix{ComplexF64},
 	target_state::Matrix{ComplexF64},
-	t::Int64,
-	recording::AbstractArray{ComplexF64}
+	recording::Union{Matrix{ComplexF64}, Array{ComplexF64, 3}}
 )
-	return quote
-		# How many states are involved?
-		upper_systems = num_systems * upper
+	# How many states are involved?
+	upper_systems = num_systems * upper
 
-		# Apply pulse
-		 @views mul!(target_state[1:upper_systems, :], source_state[1:upper_systems, :], rf_matrix)
+	# Apply pulse
+	 @views mul!(
+	 	target_state[1:upper_systems, :],
+		source_state[1:upper_systems, :],
+		rf_matrices[:, :, t]
+	)
 
-		# Store signal (F^-(k = 0)) or complete state
-		record_state(recording, target_state, t, num_systems)
-		#=
-			Note:
-			No need to apply any relaxation before getting the signal, because it is only a scaling.
-			Of course, this only holds as long as the echo time is constant.
-			Also, relaxation does not have to be computed in the last iteration if
-			the final state is not returned.
-			However, in that case upper equals one which means the following is more or less for free.
-		=#
+	# Store signal (F^-(k = 0)) or complete state
+	record_state(recording, target_state, t, num_systems)
+	#=
+		Note:
+		No need to apply any relaxation before getting the signal, because it is only a scaling.
+		Of course, this only holds as long as the echo time is constant.
+		Also, relaxation does not have to be computed in the last iteration if
+		the final state is not returned.
+		However, in that case upper equals one which means the following is more or less for free.
+	=#
 
-		# Apply relaxation (T1, T2 and diffusion)
-		apply_relaxation!(target_state, relaxation, upper, kmax, t)
+	# Apply relaxation (T1, T2 and diffusion)
+	apply_relaxation!(target_state, relaxation, upper, kmax, t)
 
-		# Shift (by gradients)
-		 @views let total_num_states = size(target_state, 1)
-			# F^+(k) goes to F^+(k+1), only for k > 0
-			# The first i is the first index of the k-state which is newly populated by the shift
-			#println("+") # Excuse the shotgun debug comment clutter
-			for i = min(upper_systems, total_num_states-num_systems) + 1 : -num_systems : num_systems+1
-				target_state[i:i+num_systems-1, 1] .= target_state[i-num_systems : i-1, 1]
-				#println("$(i-num_systems : i-1) -> $(i:i+num_systems-1)")
-			end
-			# F^+(k = 0) becomes the conjugate of F^-(k = -1)
-			target_state[1:num_systems, 1] .= conj.(target_state[num_systems+1 : 2*num_systems, 2])
-			# F^-(k) also goes to F^-(k+1), but k is ordered the other way around in the array
-			#println("-")
-			for i = 1:num_systems:(upper_systems-num_systems)
-				target_state[i : i+num_systems-1, 2] .= target_state[i+num_systems : i+2*num_systems-1, 2]
-				#println("$(i+num_systems : i+2*num_systems-1) -> $(i : i+num_systems-1)")
-			end
-			# F^-(k = -upper+1) becomes unpopulated
-			target_state[upper_systems-num_systems+1 : upper_systems, 2] .= 0
-			#println("$(upper_systems-num_systems+1 : upper_systems) -> 0")
-			#sleep(10)
-			# Longitudinal states are not getting shifted
+	# Shift (by gradients)
+	 @views let total_num_states = size(target_state, 1)
+		# F^+(k) goes to F^+(k+1), only for k > 0
+		# The first i is the first index of the k-state which is newly populated by the shift
+		#println("+") # Excuse the shotgun debug comment clutter
+		for i = min(upper_systems, total_num_states-num_systems) + 1 : -num_systems : num_systems+1
+			target_state[i:i+num_systems-1, 1] .= target_state[i-num_systems : i-1, 1]
+			#println("$(i-num_systems : i-1) -> $(i:i+num_systems-1)")
 		end
-		return
+		# F^+(k = 0) becomes the conjugate of F^-(k = -1)
+		target_state[1:num_systems, 1] .= conj.(target_state[num_systems+1 : 2*num_systems, 2])
+		# F^-(k) also goes to F^-(k+1), but k is ordered the other way around in the array
+		#println("-")
+		for i = 1:num_systems:(upper_systems-num_systems)
+			target_state[i : i+num_systems-1, 2] .= target_state[i+num_systems : i+2*num_systems-1, 2]
+			#println("$(i+num_systems : i+2*num_systems-1) -> $(i : i+num_systems-1)")
+		end
+		# F^-(k = -upper+1) becomes unpopulated
+		target_state[upper_systems-num_systems+1 : upper_systems, 2] .= 0
+		#println("$(upper_systems-num_systems+1 : upper_systems) -> 0")
+		#sleep(10)
+		# Longitudinal states are not getting shifted
 	end
-end
 
+	return
+end
 
 
