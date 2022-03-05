@@ -4,7 +4,7 @@
 	Useful if the repetition time changes, but the gradients are the same.
 
 """
-function prepare_diffusion_b_values(
+@inline function prepare_diffusion_b_values(
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	kmax::Integer
@@ -40,7 +40,7 @@ function prepare_diffusion_b_values(
 		tmp = Vector{Float64}(undef, length(G))
 		# Compute K0, inital K produced by each gradient lobe
 		K0[1] = 0
-		@views K0[2:end] .= cumsum(dK[1:end-1])
+		@views cumsum!(K0[2:end], dK[1:end-1])
 		# Compute elementwise ξ = sum_{gradients} τ * (K0^2 + 3 dK^2 + K0 * dK)
 		@. tmp = K0^2 + dK^2 / 3 + K0 * dK
 		tmp .*= τ # Must be separate from the line above, because otherwise julia allocates memory, why?
