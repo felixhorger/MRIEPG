@@ -122,6 +122,21 @@ function main()
 		@test isapprox(epgs, epgs_matlab, rtol=1e-4)
 	end
 
+	# MultiSystemMultiTRRelaxation
+	# TODO: Check minimal, full_in, full_out.
+	let
+		epgs, _ = MRIEPG.simulate(
+			Val(:full), kmax,
+			α, ϕ, fill(TR, length(α)),
+			G, τ, D,
+			R,
+			repeat(initial_state, inner=(R.N, 1)),
+			Val(:all)
+		)
+		epgs = reshape(epgs, (R.N, kmax+1, 3, length(α)))
+		epgs = permutedims(epgs, (2, 3, 4, 1))
+		@test isapprox(epgs, epgs_matlab, rtol=1e-4)
+	end
 	#=
 	initial_state = repeat(initial_state, R.N)
 	@time epgs, _ = MRIEPG.simulate(Val(:full), kmax, α, ϕ, TR, G, τ, D, R, initial_state, Val(:all))

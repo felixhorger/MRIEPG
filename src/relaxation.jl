@@ -128,11 +128,13 @@ end
 	 @views let
 		E1 = relaxation.E1[t] 
 		E2 = relaxation.E2[t] 
+		D1 = relaxation.D1[1:upper, t]
+		D2 = relaxation.D2[1:upper, t]
 		# Apparently this does not allocate memory for the views ... but haven't checked in this scenario,
 		# only REPL sandbox
-		@. state[1:upper, 1] *= E2 * relaxation.D2[1:upper]
-		@. state[1:upper, 2] *= E2 * relaxation.D2[1:upper]
-		@. state[1:upper, 3] *= E1 * relaxation.D1[1:upper]
+		@. state[1:upper, 1] *= E2 * D2
+		@. state[1:upper, 2] *= E2 * D2
+		@. state[1:upper, 3] *= E1 * D1
 		state[1, 3] += 1.0 - E1
 	end
 	return
@@ -219,7 +221,7 @@ function compute_relaxation(
 	return MultiSystemRelaxation(E, D1, D2), R.N
 end
 
-function apply_relaxation!(
+@inline function apply_relaxation!(
 	state::Matrix{ComplexF64},
 	relaxation::MultiSystemRelaxation,
 	upper::Int64,
@@ -249,7 +251,7 @@ supported_kmax(relaxation::MultiSystemMultiTRRelaxation) = length(relaxation.D1)
 function check_relaxation(relaxation::MultiSystemMultiTRRelaxation, timepoints::Integer, kmax::Integer)
 	if any(
 		(
-			length(E),
+			length(relaxation.E),
 			size.((relaxation.D1, relaxation.D2), 2)...
 		) .!= timepoints
 	)
@@ -268,8 +270,7 @@ function compute_relaxation(
 	τ::AbstractVector{<: Real},
 	D::Real,
 	kmax::Integer
-)::MultiSystemMultiTRRelaxation
-
+)
 	@assert all(TR .> 0)
 	@assert R.q1[1] > 0 && R.q2[1] > 0 # q1,2 are sorted
 	# G, τ, kmax checked in compute_multiTR_diffusion below
@@ -286,9 +287,8 @@ function compute_relaxation(
 			(@. exp(-TR[t] * R.q2)), # E2
 			R.Δ
 		)
-		@. one_minus_E1[:, t] = 1 - E[t].q1
 	end
-	return MultiSystemMultiTRRelaxation(E, D1, D2)
+	return MultiSystemMultiTRRelaxation(E, D1, D2), R.N
 end
 
 @inline function apply_relaxation!(
@@ -299,7 +299,7 @@ end
 	t::Int64
 )
 	@multi_system_relaxation_iterate(
-		relaxation.E,
+		relaxation.E[t],
 		relaxation.D1[k, t],
 		relaxation.D2[k, t],
 		relaxation.E[t].q1[m],
