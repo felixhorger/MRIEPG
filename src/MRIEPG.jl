@@ -2,7 +2,8 @@
 module MRIEPG
 	
 	using LinearAlgebra
-	using MRIConst: γ
+	using MRIConst: γ # Used in diffusion.jl
+	using TriangularGrids
 
 	include("kmax.jl")
 	include("memory.jl")
@@ -12,6 +13,5 @@ module MRIEPG
 	include("simulate.jl")
 	include("driven_equilibrium.jl")
 
-	# TODO: function to revert phase and return real signal arrays
 end
 
