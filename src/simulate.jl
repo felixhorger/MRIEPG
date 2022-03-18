@@ -16,6 +16,7 @@
 	D in m^2 / time unit matching TR (magnitude 10^-12)
 
 """
+# TODO: Shuffle arguments, make mode a default arg and put to end, kmax in front of G, R in before kmax.
 @generated function simulate(
 	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
 	kmax::Integer,
@@ -27,14 +28,14 @@
 	D::Real,
 	R::Union{NTuple{2, <: Real}, TriangularGrid{Float64}},
 	initial_state::Union{Nothing, AbstractMatrix{<: Number}} = nothing,
-	record::Union{Val{:signal}, Val{:all}} = Val(:signal)
+	record::Union{Val{:signal}, Val{:all}, Val{:nothing}} = Val(:signal)
 )
 	# Select what to return: full final state or recording only
 	# Also, select when to finish the loop
 	if mode <: Val{:full_out} || mode <: Val{:full}
 		return_value = :((
 			recording,
-			memory.two_states[get_final_state(memory, timepoints)]
+			memory.two_states[get_final_state(timepoints)]
 		))
 	else
 		return_value = :recording
@@ -42,9 +43,15 @@
 
 	# Drop singleton dimension or transpose recording after simulation finished
 	if record <: Val{:signal}
-		reshape_recording = :( recording = permutedims(memory.recording, (2,1)) )
-	else
+		if R <: NTuple{2, Float64}
+			reshape_recording = :( recording = dropdims(memory.recording; dims=1) )
+		else
+			reshape_recording = :( recording = permutedims(memory.recording, (2,1)) )
+		end
+	elseif record <: Val{:all}
 		reshape_recording = :( recording = copy(memory.recording) )
+	else
+		reshape_recording = :()
 	end
 
 	# Body of the function in quote
@@ -67,20 +74,18 @@
 		memory = allocate_memory(mode, timepoints, num_systems, kmax, initial_state, record)
 
 		# Simulate
-		simulate!(mode, kmax, timepoints, rf_matrices, relaxation, num_systems, memory)
+		simulate!(mode, kmax, rf_matrices, relaxation, num_systems, memory)
 
 		$reshape_recording
 		return $return_value
 	end
 end
-# TODO: Need off resonance version. Maybe use "nothing" if no off-res should be simulated and Float if it should.
-# Check if initial state and mode are compatible
 
 
+# TODO: Check impact of using non-specific types <: Complex
 function simulate!(
 	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
 	kmax::Int64, # I think a relaxation struct made with one kmax can be used for every kmax lower than that.
-	timepoints::Int64,
 	rf_matrices::Array{ComplexF64, 3},
 	relaxation::Union{ConstantRelaxation, MultiTRRelaxation, MultiSystemRelaxation, MultiSystemMultiTRRelaxation},
 	num_systems::Int64,
@@ -101,7 +106,7 @@ function simulate!(
 
 	# Check arguments
 	@assert size(rf_matrices, 1) == size(rf_matrices, 2) == 3
-	@assert size(rf_matrices, 3) == timepoints
+	timepoints = size(rf_matrices, 3)
 	total_num_states = num_systems * (kmax+1)
 	check_relaxation(relaxation, timepoints, kmax)
 	@assert all(size.(memory.two_states, 1) .>= total_num_states)
@@ -131,7 +136,7 @@ function simulate!(
 	num_systems::Int64,
 	source_state::Matrix{ComplexF64},
 	target_state::Matrix{ComplexF64},
-	recording::Union{Matrix{ComplexF64}, Array{ComplexF64, 3}}
+	recording::Union{Matrix{ComplexF64}, Array{ComplexF64, 3}, Nothing}
 )
 	# How many states are involved?
 	upper_systems = num_systems * upper

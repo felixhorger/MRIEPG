@@ -3,37 +3,38 @@
 # This can be in struct because it should be hidden to the user, no parameters should be set here
 struct SimulationMemory
 	two_states::NTuple{2, Matrix{ComplexF64}}
-	recording::Union{Matrix{ComplexF64}, Array{ComplexF64, 3}}
+	recording::Union{Matrix{ComplexF64}, Array{ComplexF64, 3}, Nothing}
 end
-@generated function allocate_memory(
+
+function allocate_memory(
 	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
 	timepoints::Integer,
 	num_systems::Integer,
 	kmax::Integer,
 	initial_state::Union{Nothing, AbstractMatrix{<: Number}} = nothing,
-	record::Union{Val{:signal}, Val{:all}} = Val(:signal)
+	record::Union{Val{:signal}, Val{:all}, Val{:nothing}} = Val(:signal)
 )::SimulationMemory
-	return quote
-		# How many states are there in total?
-		total_num_states = (kmax+1) * num_systems # +1 for k = 0
+	# How many states are there in total?
+	total_num_states = (kmax+1) * num_systems # +1 for k = 0
 
-		# Pre-allocate memory for the current and the next phase graph state
-		two_states = allocate_states(mode, initial_state, total_num_states)
+	# Pre-allocate memory for the current and the next phase graph state
+	two_states = allocate_states(mode, initial_state, total_num_states)
 
-		# Allocate memory for recording EPG states in time
-		recording = allocate_recording(record, timepoints, num_systems, total_num_states)
+	# Allocate memory for recording EPG states in time
+	recording = allocate_recording(record, timepoints, num_systems, total_num_states)
 
-		return SimulationMemory(two_states, recording)
-	end
+	return SimulationMemory(two_states, recording)
 end
 
 
+# TODO: These should return booleans and assert should be in caller
 @inline function check_recording_size(recording::Matrix{ComplexF64}, timepoints::Int64, _::Int64)
 	@assert size(recording, 2) == timepoints
 end
 @inline function check_recording_size(recording::Array{ComplexF64, 3}, timepoints::Int64, total_num_states::Int64)
 	@assert size(recording) == (total_num_states, 3, timepoints)
 end
+@inline check_recording_size(recording::Nothing, _::Int64, _::Int64) = nothing
 
 
 
@@ -88,6 +89,8 @@ end
 )
 	Array{ComplexF64, 3}(undef, number_of_states, 3, timepoints)
 end
+@inline allocate_recording(record::Val{:nothing}, _::Integer, _::Integer, _::Integer) = nothing
+
 
 # Function to record the state of the graph, depending on record mode
 @inline function record_state(
@@ -106,9 +109,10 @@ end
 )
 	@inbounds recording[:, :, t] .= state
 end
+@inline record_state(recording::Nothing, _::Matrix{ComplexF64}, _::Integer, _::Integer) = nothing
 
 
-@inline function get_final_state(memory::SimulationMemory, timepoints::Integer)
+@inline function get_final_state(timepoints::Integer)
 	mod1(timepoints, 2)
 end
 
