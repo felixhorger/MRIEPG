@@ -3,7 +3,7 @@ function driven_equilibrium(
 	cycles::Integer,
 	α::AbstractVector{<: Real},
 	ϕ::AbstractVector{<: Real},
-	TR::Tuple{Real, Real},
+	TR::Tuple{Real, Real}, # This is quite inflexible, need generated
 	kmax::Integer,
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
@@ -15,107 +15,54 @@ function driven_equilibrium(
 
 	TR, TW = TR # (W for waiting)
 
+	timepoints = length(α)
+	@assert length(ϕ) == timepoints
+
+	rf_matrices = Array{ComplexF64, 3}(undef, 3, 3, timepoints)
+	 @views for t = 1:timepoints
+		rf_pulse_matrix!(rf_matrices[:, :, t], α[t], ϕ[t])
+	end
+
 	# Precompute inter-cycle relaxation
 	# G is zero, and τ is the waiting time
-	relaxation_inter_cycle, _ = prepare_relaxation(TW, R, [0.0], Float64[TW], D, kmax)
+	relaxation, num_systems = compute_relaxation(TR, R, G, τ, D, kmax)
+	inter_cycle_relaxation, _ = compute_relaxation(TW, R, [0.0], Float64[TW], D, kmax)
 
-	# First cycle
-	signal, state = simulate(Val(:full_out), kmax, α, ϕ, TR, G, τ, D, R, nothing, record)
+	# Allocate memory
+	memory = MRIEPG.allocate_memory(Val(:full), timepoints, num_systems, kmax, nothing, Val(:nothing))
+	recording = MRIEPG.allocate_recording(Val(:signal), timepoints, num_systems, 0)
 
-	# All other cycles
-	#error = Vector{Float64}(undef, cycles-1)
-	for cycle = 2:cycles
-		last_signal = copy(signal)
-
-		apply_relaxation!(state, relaxation_inter_cycle, kmax+1, kmax, 0)
-
-		signal, state = simulate(
-			Val(:full),
-			kmax,
-			α, ϕ, TR,
-			G, τ, D,
-			R,
-			state,
-			record
-		)
-		#error[cycle-1] = norm(last_signal .- signal)
-	end
-	return signal, error
-end
-
-
-function driven_equilibrium!(
-	cycles::Integer,
-	rf_matrices::AbstractArray{<: Complex, 3},
-	inter_cycle_relaxation::Union{ConstantRelaxation, MultiSystemRelaxation},
-	relaxation::Union{ConstantRelaxation, MultiTRRelaxation, MultiSystemRelaxation, MultiSystemMultiTRRelaxation},
-	num_systems::Integer,
-	kmax::Integer,
-	memory::SimulationMemory
-)
-	# TODO: See the version for constant TR = TW
-	error(" # TODO: See the version for constant TR = TW")
-	# TODO: Allow for recording all, maybe make argument with array of recordings, default all nothings
-
-	timepoints = size(rf_matrices, 3)
-	final_state_index = get_final_state(timepoints)
-
-	# First cycle
-	driven_equilibrium_cycle!(
-		Val(:full_out),
+	# Run
+	signal = driven_equilibrium!(
+		cycles,
 		rf_matrices,
-		inter_cycle_relaxation,
 		relaxation,
-		final_state_index,
+		inter_cycle_relaxation,
+		num_systems,
 		kmax,
-		memory
+		memory, recording
 	)
-
-	# All other cycles
-	for cycle = 2:cycles-1
-		# Reshuffle states
-		reorder_states(
-			memory, final_state_index,
-			memory.recording # Keep original recording
-		)
-		driven_equilibrium_cycle!(
-			Val(:full),
-			kmax,
-			rf_matrices,
-			inter_cycle_relaxation, relaxation,
-			memory, final_state_index
-		)
-	end
-	# Reshuffle states and use proper recording for the last cycle
-	reorder_states(
-		memory, final_state_index,
-		allocate_recording(Val(:signal), timepoints, num_systems, 0)
-	)
-	# Simulate last cycle
-	driven_equilibrium_cycle!(
-		Val(:full_in),
-		kmax,
-		rf_matrices,
-		inter_cycle_relaxation, relaxation,
-		memory, final_state_index
-	)
-	return permutedims(memory.recording, (2,1))
+	# TODO: Extract relevant dimensions like in simulate() when setting up generated function
+	return signal
 end
+
 
 
 @generated function driven_equilibrium!(
 	cycles::Integer,
 	rf_matrices::AbstractArray{<: Complex, 3},
 	relaxation::Union{ConstantRelaxation, MultiTRRelaxation, MultiSystemRelaxation, MultiSystemMultiTRRelaxation},
+	inter_cycle_relaxation::Union{ConstantRelaxation, MultiSystemRelaxation, Nothing},
 	num_systems::Integer,
 	kmax::Integer,
 	memory::SimulationMemory,
 	out::AbstractArray{ComplexF64, N}
 ) where N
+	# Break in between cycles
 
 	if N == 2
 		!(out <: Array{ComplexF64, 2}) && error("For the case N = 2 views do not work")
-		set_recording = :nothing
+		set_recording = :()
 		final_recording = :( out )
 	elseif N > 2
 		indices = Vector{Symbol}(undef, N+1)
@@ -125,6 +72,18 @@ end
 		final_recording = :( memory.recording )
 	else
 		error("N must be in (2, 3, 4)")
+	end
+
+	if inter_cycle_relaxation <: Nothing
+		apply_inter_cycle_relaxation = :()
+	else
+		apply_inter_cycle_relaxation = quote
+			apply_relaxation!(
+				memory.two_states[final_state_index],
+				inter_cycle_relaxation,
+				kmax+1, kmax, 0
+			)
+		end
 	end
 
 	return quote
@@ -154,6 +113,7 @@ end
 				relaxation, num_systems,
 				memory
 			)
+			$apply_inter_cycle_relaxation
 			$set_recording
 		end
 		# Reshuffle states and use proper recording for the last cycle
@@ -168,6 +128,7 @@ end
 			relaxation, num_systems,
 			memory
 		)
+		$apply_inter_cycle_relaxation
 		cycle = cycles
 		$set_recording
 		return memory.recording
