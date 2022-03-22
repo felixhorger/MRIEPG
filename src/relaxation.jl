@@ -16,7 +16,7 @@ function check_relaxation(relaxation::ConstantRelaxation, timepoints::Integer, k
 end
 function compute_relaxation(
 	TR::Real,
-	R::NTuple{2, <: Real}, # Required because TriangularGrid can be used with MultiSystemRelaxation
+	R::NTuple{2, <: Real}, # Required because XLargerY can be used with MultiSystemRelaxation
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	D::Real,
@@ -96,7 +96,7 @@ function check_relaxation(relaxation::MultiTRRelaxation, timepoints::Integer, km
 end
 function compute_relaxation(
 	TR::AbstractVector{<: Real}, 
-	R::NTuple{2, <: Real}, # Required because TriangularGrid can be used with MultiSystemRelaxation
+	R::NTuple{2, <: Real}, # Required because XLargerY can be used with MultiSystemRelaxation
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	D::Real,
@@ -153,7 +153,7 @@ macro multi_system_relaxation_iterate(grid, D1, D2, E1, E2)
 			D2 = $D2
 			# Offset in array due to k
 			k_offset = (k - 1) * $grid.N
-			 @views TriangularGrids.@iterate(
+			 @views XLargerYs.@iterate(
 				$grid,
 				# Compute transverse relaxation in outer loop
 				state[i+k_offset : j+k_offset, 1:2] .*= $E2 * D2,
@@ -163,7 +163,7 @@ macro multi_system_relaxation_iterate(grid, D1, D2, E1, E2)
 		end
 
 		# Second part of longitudinal relaxation (increase magnetisation towards M0)
-		 @views TriangularGrids.@iterate(
+		 @views XLargerYs.@iterate(
 			$grid,
 			# Do nothing in outer loop because nothing R2 related happens
 			nothing,
@@ -179,7 +179,7 @@ end
 # but it will be used to distinguish time and graph axes
 # (the latter if multiple EPGs are simulated at once, i.e. vector values R1,2).
 struct MultiSystemRelaxation
-	E::TriangularGrid{Float64} # Axes go along system direction (aligned with k direction)
+	E::XLargerY{Float64} # Axes go along system direction (aligned with k direction)
 	D1::Vector{Float64} # Axes go along k direction
 	D2::Vector{Float64}
 end
@@ -193,7 +193,7 @@ end
 
 function compute_relaxation(
 	TR::Real,
-	R::TriangularGrid{<: Real}, # Relaxivities
+	R::XLargerY{<: Real}, # Relaxivities
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	D::Real,
@@ -212,7 +212,7 @@ function compute_relaxation(
 	D2 = (@. b_transverse = diffusion_factor(b_transverse, D))
 
 	# Compute exponentials for T1, T2 relaxation factors
-	E = TriangularGrid(
+	E = XLargerY(
 		(@. exp(-TR * R.q1)), # E1
 		(@. exp(-TR * R.q2)), # E2
 		R.Δ
@@ -243,7 +243,7 @@ end
 # Vector valued TR, R1, R2
 # Can only precompute diffusion, otherwise memory explodes
 struct MultiSystemMultiTRRelaxation
-	E::Vector{TriangularGrid{Float64}} # Axes go along time
+	E::Vector{XLargerY{Float64}} # Axes go along time
 	D1::Matrix{Float64} # Axes go along k direction
 	D2::Matrix{Float64}
 end
@@ -265,7 +265,7 @@ end
 
 function compute_relaxation(
 	TR::AbstractVector{<: Real}, 
-	R::TriangularGrid{<: Real}, # Relaxivities
+	R::XLargerY{<: Real}, # Relaxivities
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	D::Real,
@@ -280,9 +280,9 @@ function compute_relaxation(
 
 	# Compute exponentials for T1, T2 relaxation factors
 	timepoints = length(TR)
-	E = Vector{TriangularGrid{Float64}}(undef, timepoints)
+	E = Vector{XLargerY{Float64}}(undef, timepoints)
 	@inbounds for t = 1:timepoints
-		E[t] = TriangularGrid(
+		E[t] = XLargerY(
 			(@. exp(-TR[t] * R.q1)), # E1
 			(@. exp(-TR[t] * R.q2)), # E2
 			R.Δ

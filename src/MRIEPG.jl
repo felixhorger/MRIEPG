@@ -3,7 +3,7 @@ module MRIEPG
 	
 	using LinearAlgebra
 	using MRIConst: γ # Used in diffusion.jl
-	using TriangularGrids
+	using XLargerYs
 
 	include("kmax.jl")
 	include("memory.jl")

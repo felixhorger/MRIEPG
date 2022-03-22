@@ -26,7 +26,7 @@
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	D::Real,
-	R::Union{NTuple{2, <: Real}, TriangularGrid{Float64}},
+	R::Union{NTuple{2, <: Real}, XLargerY{Float64}},
 	initial_state::Union{Nothing, AbstractMatrix{<: Number}} = nothing,
 	record::Union{Val{:signal}, Val{:all}, Val{:nothing}} = Val(:signal)
 )

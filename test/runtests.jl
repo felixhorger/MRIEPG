@@ -47,14 +47,14 @@ function main()
 	end
 
 	# Set up relaxivities
-	R = MRIEPG.TriangularGrids.TriangularGrid(1 ./ reverse(T1), 1 ./ reverse(T2))
+	R = MRIEPG.XLargerYs.XLargerY(1 ./ reverse(T1), 1 ./ reverse(T2))
 	
 	# ConstantRelaxation
 	# TODO: Check minimal, full_in, full_out.
 	# Maybe compare original EPG with my kmax modification, then also simulate only minimal
 	let
 		epgs = Array{ComplexF64}(undef, kmax+1, 3, length(α), R.N)
-		MRIEPG.TriangularGrids.@iterate(
+		MRIEPG.XLargerYs.@iterate(
 			R,
 			# Outer loop
 			nothing,
@@ -88,7 +88,7 @@ function main()
 	# TODO: Check minimal, full_in, full_out.
 	let
 		epgs = Array{ComplexF64}(undef, kmax+1, 3, length(α), R.N)
-		MRIEPG.TriangularGrids.@iterate(
+		MRIEPG.XLargerYs.@iterate(
 			R,
 			nothing,
 			begin

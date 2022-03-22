@@ -8,7 +8,7 @@ function driven_equilibrium(
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	D::Real,
-	R::Union{NTuple{2, <: Real}, TriangularGrid{Float64}}
+	R::Union{NTuple{2, <: Real}, XLargerY{Float64}}
 )
 	# TODO: Allow record all, then add another function to compute the error between cycles
 	# record signal, last, lastall (epg of last cycle), all (all epgs)

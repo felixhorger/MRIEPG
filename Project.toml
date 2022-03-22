@@ -6,4 +6,4 @@ version = "0.1.0"
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MRIConst = "261c5ebf-3ec9-40d5-9fcc-d6819a7ef2d0"
-TriangularGrids = "2d6e2bd4-5d2e-4203-855a-d479d6cb062f"
+XLargerYs = "2d6e2bd4-5d2e-4203-855a-d479d6cb062f"
