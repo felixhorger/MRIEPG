@@ -202,7 +202,7 @@ function compute_relaxation(
 
 	# Check arguments
 	@assert TR > 0
-	@assert R.q1[1] > 0 && R.q2[1] > 0 # q1,2 are sorted
+	@assert R.x[1] > 0 && R.y[1] > 0 # x,y are sorted
 	# G, τ, kmax checked in diffusion_b_values below
 
 	# Diffusion
@@ -213,8 +213,8 @@ function compute_relaxation(
 
 	# Compute exponentials for T1, T2 relaxation factors
 	E = XLargerY(
-		(@. exp(-TR * R.q1)), # E1
-		(@. exp(-TR * R.q2)), # E2
+		(@. exp(-TR * R.x)), # E1
+		(@. exp(-TR * R.y)), # E2
 		R.Δ
 	)
 
@@ -232,8 +232,8 @@ end
 		relaxation.E,
 		relaxation.D1[k],
 		relaxation.D2[k],
-		relaxation.E.q1[m],
-		relaxation.E.q2[n]
+		relaxation.E.x[m],
+		relaxation.E.y[n]
 	)
 	return
 end
@@ -272,7 +272,7 @@ function compute_relaxation(
 	kmax::Integer
 )
 	@assert all(TR .> 0)
-	@assert R.q1[1] > 0 && R.q2[1] > 0 # q1,2 are sorted
+	@assert R.x[1] > 0 && R.y[1] > 0 # x,y are sorted
 	# G, τ, kmax checked in compute_multiTR_diffusion below
 
 	# Diffusion
@@ -283,8 +283,8 @@ function compute_relaxation(
 	E = Vector{XLargerY{Float64}}(undef, timepoints)
 	@inbounds for t = 1:timepoints
 		E[t] = XLargerY(
-			(@. exp(-TR[t] * R.q1)), # E1
-			(@. exp(-TR[t] * R.q2)), # E2
+			(@. exp(-TR[t] * R.x)), # E1
+			(@. exp(-TR[t] * R.y)), # E2
 			R.Δ
 		)
 	end
@@ -302,8 +302,8 @@ end
 		relaxation.E[t],
 		relaxation.D1[k, t],
 		relaxation.D2[k, t],
-		relaxation.E[t].q1[m],
-		relaxation.E[t].q2[n]
+		relaxation.E[t].x[m],
+		relaxation.E[t].y[n]
 	)
 	return
 end

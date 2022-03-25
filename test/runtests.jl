@@ -64,7 +64,7 @@ function main()
 					Val(:full), kmax,
 					α, ϕ, TR,
 					G, τ, D,
-					(R.q1[m], R.q2[n]),
+					(R.x[m], R.y[n]),
 					initial_state,
 					Val(:all)
 				)
@@ -96,7 +96,7 @@ function main()
 					Val(:full), kmax,
 					α, ϕ, fill(TR, length(α)),
 					G, τ, D,
-					(R.q1[m], R.q2[n]),
+					(R.x[m], R.y[n]),
 					initial_state,
 					Val(:all)
 				)
