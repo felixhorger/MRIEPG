@@ -97,6 +97,7 @@ end
 			relaxation, num_systems,
 			memory
 		)
+		$apply_inter_cycle_relaxation
 		cycle = 1
 		$set_recording
 
@@ -113,8 +114,8 @@ end
 				relaxation, num_systems,
 				memory
 			)
-			$apply_inter_cycle_relaxation
 			$set_recording
+			$apply_inter_cycle_relaxation
 		end
 		# Reshuffle states and use proper recording for the last cycle
 		memory = reorder_states(
@@ -128,9 +129,9 @@ end
 			relaxation, num_systems,
 			memory
 		)
-		$apply_inter_cycle_relaxation
 		cycle = cycles
 		$set_recording
+		# No need to apply inter_cycle_relaxation since no more signals to read out
 		return memory.recording
 	end
 end

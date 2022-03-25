@@ -113,7 +113,7 @@ function simulate!(
 	check_recording_size(recording, timepoints, total_num_states)
 
 	 for t = 1:timepoints
-		j = mod1(t, 2)
+		j = mod1(t, 2) # Index of which state to write into in memory.two_states
 		upper = required_states(mode, t, timepoints, kmax)
 		simulate!(
 			mode, kmax, upper, t,
@@ -123,6 +123,7 @@ function simulate!(
 			recording
 		)
 	end
+
 	return
 end
 
@@ -138,6 +139,8 @@ function simulate!(
 	target_state::Matrix{ComplexF64},
 	recording::Union{Matrix{ComplexF64}, Array{ComplexF64, 3}, Nothing}
 )
+	# No bounds checked!
+
 	# How many states are involved?
 	upper_systems = num_systems * upper
 
