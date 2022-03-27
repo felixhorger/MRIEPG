@@ -99,6 +99,8 @@ function simulate!(
 	# However, larger scale fitting could be more efficient if pulse matrices change (such as with relB1 as free parameter, in that case don't precompute)
 	# For the future, make a function that computes everything on demand, no precomputation
 
+	# memory.two_states[2] needs to contain the initial state and memory.two_state[1] needs to be zeros!
+
 
 	# Alias into SimulationMemory struct
 	two_states = memory.two_states
