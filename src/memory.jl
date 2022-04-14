@@ -53,7 +53,7 @@ function allocate_states(
 		zeros(ComplexF64, total_num_states, 3), # +1 for k = 0
 		zeros(ComplexF64, total_num_states, 3) # Needs to be zeros, otherwise looks ugly in plots
 	)
-	@inbounds two_states[2][1, 3] = 1 # Set M0, start with second block
+	@inbounds two_states[1][1, 3] = 1 # Set M0, of source state
 	return two_states
 end
 
@@ -67,7 +67,7 @@ function allocate_states(
 	copy_of_initial_state = Matrix{ComplexF64}(undef, total_num_states, 3)
 	copy_of_initial_state .= initial_state
 	# Can return uninitialised array, because mode is full_in
-	return Matrix{ComplexF64}(undef, total_num_states, 3), copy_of_initial_state
+	return copy_of_initial_state, Matrix{ComplexF64}(undef, total_num_states, 3)
 end
 
 
@@ -110,9 +110,4 @@ end
 	@inbounds recording[:, :, t] .= state
 end
 @inline record_state(recording::Nothing, _::Matrix{ComplexF64}, _::Integer, _::Integer) = nothing
-
-
-@inline function get_final_state(timepoints::Integer)
-	mod1(timepoints, 2)
-end
 

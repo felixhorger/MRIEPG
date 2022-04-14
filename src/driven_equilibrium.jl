@@ -79,7 +79,7 @@ end
 	else
 		apply_inter_cycle_relaxation = quote
 			apply_relaxation!(
-				memory.two_states[final_state_index],
+				memory.two_states[1],
 				inter_cycle_relaxation,
 				kmax+1, kmax, 0
 			)
@@ -103,11 +103,6 @@ end
 
 		# All other cycles
 		for cycle = 2:cycles-1
-			# Reshuffle states
-			memory = reorder_states(
-				memory, final_state_index,
-				memory.recording
-			)
 			simulate!(
 				Val(:full), kmax,
 				rf_matrices,
@@ -117,11 +112,8 @@ end
 			$set_recording
 			$apply_inter_cycle_relaxation
 		end
-		# Reshuffle states and use proper recording for the last cycle
-		memory = reorder_states(
-			memory, final_state_index,
-			$final_recording
-		)
+		# Use proper recording for the last cycle
+		memory = SimulationMemory(memory.two_states, $final_recording)
 		# Simulate last cycle
 		simulate!(
 			Val(:full_in), kmax,
@@ -134,21 +126,6 @@ end
 		# No need to apply inter_cycle_relaxation since no more signals to read out
 		return memory.recording
 	end
-end
-
-@inline function reorder_states(
-	memory::SimulationMemory,
-	final_state_index::Integer,
-	recording::Union{Matrix{ComplexF64}, Array{ComplexF64, 3}, Nothing}
-)
-	memory = SimulationMemory(
-		# Only switch pointers, here C would be useful ... mumble mumble
-		(
-			memory.two_states[3-final_state_index],
-			memory.two_states[final_state_index]
-		),
-		recording
-	)
 end
 
 @inline function driven_equilibrium_cycle!(
@@ -164,7 +141,7 @@ end
 	simulate!(mode, kmax, rf_matrices, relaxation, memory)
 	# Inter cycle relaxation
 	apply_relaxation!(
-		memory.two_states[final_state_index],
+		memory.two_states[1],
 		relaxation_inter_cycle,
 		kmax+1, # upper
 		kmax,

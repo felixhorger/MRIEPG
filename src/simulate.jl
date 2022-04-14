@@ -35,7 +35,7 @@
 	if mode <: Val{:full_out} || mode <: Val{:full}
 		return_value = :((
 			recording,
-			memory.two_states[get_final_state(timepoints)]
+			memory.two_states[1]
 		))
 	else
 		return_value = :recording
@@ -99,7 +99,7 @@ function simulate!(
 	# However, larger scale fitting could be more efficient if pulse matrices change (such as with relB1 as free parameter, in that case don't precompute)
 	# For the future, make a function that computes everything on demand, no precomputation
 
-	# memory.two_states[2] needs to contain the initial state and memory.two_state[1] needs to be zeros!
+	# memory.two_states[1] needs to contain the initial state and memory.two_state[2] needs to be zeros!
 
 
 	# Alias into SimulationMemory struct
@@ -114,17 +114,22 @@ function simulate!(
 	@assert all(size.(memory.two_states, 1) .>= total_num_states)
 	check_recording_size(recording, timepoints, total_num_states)
 
+	source_state, target_state = memory.two_states
 	 for t = 1:timepoints
-		j = mod1(t, 2) # Index of which state to write into in memory.two_states
 		upper = required_states(mode, t, timepoints, kmax)
 		simulate!(
 			mode, kmax, upper, t,
 			rf_matrices,
 			relaxation, num_systems,
-			two_states[3-j], two_states[j],
+			source_state, target_state,
 			recording
 		)
+		# Swap source and target
+		source_state, target_state = target_state, source_state
 	end
+
+	# Reorder states in memory struct
+	memory = SimulationMemory((source_state, target_state), recording)
 
 	return
 end
