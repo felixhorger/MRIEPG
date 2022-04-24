@@ -5,9 +5,6 @@
 # TODO: use mode not for kmax, but for e.g. GRE, TSE, ...
 # rename mode to mask or sth
 """
-	TODO: reduce phi to phi0 and Delta phi
-	If the user has a more complicated scenario, he/she has to use multiple simulate() calls,
-	handing the final state over to the next call.
 	α, ϕ in radians
 	TR in the unit determined by R1,2
 	kmax in indices
@@ -17,7 +14,7 @@
 
 """
 # TODO: Shuffle arguments, make mode a default arg and put to end, kmax in front of G, R in before kmax.
-@generated function simulate(
+function simulate(
 	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
 	kmax::Integer,
 	α::AbstractVector{<: Real},
@@ -30,55 +27,27 @@
 	initial_state::Union{Nothing, AbstractMatrix{<: Number}} = nothing,
 	record::Union{Val{:signal}, Val{:all}, Val{:nothing}} = Val(:signal)
 )
-	# Select what to return: full final state or recording only
-	# Also, select when to finish the loop
-	if mode <: Val{:full_out} || mode <: Val{:full}
-		return_value = :((
-			recording,
-			memory.two_states[1]
-		))
-	else
-		return_value = :recording
+	# Precompute relaxation
+	relaxation, num_systems = compute_relaxation(TR, R, G, τ, D, kmax)
+
+	# Get number of timepoints and check size of ϕ
+	timepoints = length(α)
+	@assert length(ϕ) == timepoints
+
+	# Precompute pulse matrices
+	rf_matrices = Array{ComplexF64, 3}(undef, 3, 3, timepoints)
+	 @views for t = 1:timepoints
+		rf_pulse_matrix!(rf_matrices[:, :, t], α[t], ϕ[t])
 	end
 
-	# Drop singleton dimension or transpose recording after simulation finished
-	if record <: Val{:signal}
-		if R <: NTuple{2, Float64}
-			reshape_recording = :( recording = dropdims(memory.recording; dims=1) )
-		else
-			reshape_recording = :( recording = permutedims(memory.recording, (2,1)) )
-		end
-	elseif record <: Val{:all}
-		reshape_recording = :( recording = copy(memory.recording) )
-	else
-		reshape_recording = :()
-	end
+	# Allocate memory for the simulation
+	memory = allocate_memory(mode, timepoints, num_systems, kmax, initial_state, record)
 
-	# Body of the function in quote
-	return quote
+	# Simulate
+	simulate!(mode, kmax, rf_matrices, relaxation, num_systems, memory)
 
-		# Precompute relaxation
-		relaxation, num_systems = compute_relaxation(TR, R, G, τ, D, kmax)
-
-		# Get number of timepoints and check size of ϕ
-		timepoints = length(α)
-		@assert length(ϕ) == timepoints
-
-		# Precompute pulse matrices
-		rf_matrices = Array{ComplexF64, 3}(undef, 3, 3, timepoints)
-		 @views for t = 1:timepoints
-			rf_pulse_matrix!(rf_matrices[:, :, t], α[t], ϕ[t])
-		end
-
-		# Allocate memory for the simulation
-		memory = allocate_memory(mode, timepoints, num_systems, kmax, initial_state, record)
-
-		# Simulate
-		simulate!(mode, kmax, rf_matrices, relaxation, num_systems, memory)
-
-		$reshape_recording
-		return $return_value
-	end
+	recording = reshape_recording(R, memory, record)
+	return select_return_value(mode, memory, recording)
 end
 
 
@@ -200,3 +169,24 @@ function simulate!(
 end
 
 
+# Drop singleton dimension or transpose recording after simulation finished
+@inline function reshape_recording(R::NTuple{2, Float64}, memory::SimulationMemory, record::Val{:signal})
+	dropdims(memory.recording; dims=1)
+end
+@inline function reshape_recording(R::XLargerY{Float64}, memory::SimulationMemory, record::Val{:signal})
+	permutedims(memory.recording, (2,1))
+end
+@inline function reshape_recording(
+	R::Union{NTuple{2, Float64}, XLargerY{Float64}},
+	memory::SimulationMemory,
+	record::Val{:all}
+)
+	copy(memory.recording)
+end
+reshape_recording(R::Union{NTuple{2, Float64}, XLargerY{Float64}}, memory::SimulationMemory, record::Val{:nothing}) = nothing
+
+# Depending on the simulation mode, select the right return value
+@inline function select_return_value(mode::Union{Val{:full_out}, Val{:full}}, memory::SimulationMemory, recording)
+	(recording, memory.two_states[1])
+end
+@inline select_return_value(mode::Union{Val{:minimal}, Val{:full_in}}, _::SimulationMemory, recording) = recording
