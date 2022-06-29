@@ -48,6 +48,55 @@ end
 
 
 
+function driven_equilibrium(
+	cycles::Integer,
+	α::AbstractVector{<: Real},
+	ϕ::AbstractVector{<: Real},
+	TR::Tuple{Real, Real}, # This is quite inflexible, need generated
+	kmax::Integer,
+	G::AbstractVector{<: Real},
+	τ::AbstractVector{<: Real},
+	D::Real,
+	R::Union{NTuple{2, <: Real}, XLargerY{Float64}}
+)
+	# TODO: Allow record all, then add another function to compute the error between cycles
+	# record signal, last, lastall (epg of last cycle), all (all epgs)
+
+	TR, TW = TR # (W for waiting)
+
+	timepoints = length(α)
+	@assert length(ϕ) == timepoints
+
+	rf_matrices = Array{ComplexF64, 3}(undef, 3, 3, timepoints)
+	 @views for t = 1:timepoints
+		rf_pulse_matrix!(rf_matrices[:, :, t], α[t], ϕ[t])
+	end
+
+	# Precompute inter-cycle relaxation
+	# G is zero, and τ is the waiting time
+	relaxation, num_systems = compute_relaxation(TR, R, G, τ, D, kmax)
+	inter_cycle_relaxation, _ = compute_relaxation(TW, R, [0.0], Float64[TW], D, kmax)
+
+	# Allocate memory
+	memory = MRIEPG.allocate_memory(Val(:full), timepoints, num_systems, kmax, nothing, Val(:nothing))
+	recording = MRIEPG.allocate_recording(Val(:signal), timepoints, num_systems, 0)
+
+	# Run
+	signal = driven_equilibrium!(
+		cycles,
+		rf_matrices,
+		relaxation,
+		inter_cycle_relaxation,
+		num_systems,
+		kmax,
+		memory, recording
+	)
+	# TODO: Extract relevant dimensions like in simulate() when setting up generated function
+	return signal
+end
+
+
+
 @generated function driven_equilibrium!(
 	cycles::Integer,
 	rf_matrices::AbstractArray{<: Complex, 3},
@@ -88,7 +137,6 @@ end
 
 	return quote
 		timepoints = size(rf_matrices, 3)
-		final_state_index = get_final_state(timepoints)
 
 		# First cycle
 		simulate!(

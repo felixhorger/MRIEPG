@@ -15,15 +15,15 @@
 """
 # TODO: Shuffle arguments, make mode a default arg and put to end, kmax in front of G, R in before kmax.
 function simulate(
-	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
-	kmax::Integer,
 	α::AbstractVector{<: Real},
 	ϕ::AbstractVector{<: Real},
 	TR::Union{Real, AbstractVector{<: Real}},
+	R::Union{NTuple{2, <: Real}, XLargerY{Float64}},
 	G::AbstractVector{<: Real},
 	τ::AbstractVector{<: Real},
 	D::Real,
-	R::Union{NTuple{2, <: Real}, XLargerY{Float64}},
+	kmax::Integer,
+	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}}=Val{:minimal},
 	initial_state::Union{Nothing, AbstractMatrix{<: Number}} = nothing,
 	record::Union{Val{:signal}, Val{:all}, Val{:nothing}} = Val(:signal)
 )
@@ -49,6 +49,8 @@ function simulate(
 	recording = reshape_recording(R, memory, record)
 	return select_return_value(mode, memory, recording)
 end
+
+#TODO: Make function that prepares everything and returns a function that simulates for driven equilibrium
 
 
 # TODO: Check impact of using non-specific types <: Complex
@@ -105,7 +107,7 @@ end
 
 function simulate!(
 	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
-	kmax::Int64, # I think a relaxation struct made with a spcific kmax can be used for every kmax lower than that.
+	kmax::Int64, # I think a relaxation struct made with a spcific kmax can be used for every kmax lower than that, wasn't tested though
 	upper::Int64,
 	t::Int64,
 	rf_matrices::Array{ComplexF64, 3},
