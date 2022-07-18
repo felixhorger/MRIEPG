@@ -104,7 +104,7 @@ function compute_relaxation(
 )::Tuple{MultiTRRelaxation, Int64}
 
 	# Check arguments
-	@assert all(TR .> 0)
+	@assert all(t -> t > 0, TR)
 	@assert R[1] > 0 && R[2] > 0
 	# G, τ, kmax checked in compute_multiTR_diffusion below
 
@@ -271,7 +271,7 @@ function compute_relaxation(
 	D::Real,
 	kmax::Integer
 )
-	@assert all(TR .> 0)
+	@assert all(t -> t > 0, TR)
 	@assert R.x[1] > 0 && R.y[1] > 0 # x,y are sorted
 	# G, τ, kmax checked in compute_multiTR_diffusion below
 

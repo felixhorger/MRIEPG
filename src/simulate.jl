@@ -1,3 +1,4 @@
+# TODO: multi dimensional EPGs
 #=
 	The convention that variables are lower case is not fully satisfied herein.
 	Gradients are denoted G, diffusion coefficient D, repetition time TR, relaxivities R.
@@ -82,7 +83,10 @@ function simulate!(
 	timepoints = size(rf_matrices, 3)
 	total_num_states = num_systems * (kmax+1)
 	check_relaxation(relaxation, timepoints, kmax)
-	@assert all(size.(memory.two_states, 1) .>= total_num_states)
+	@assert all(
+		m -> size(m, 1) >= total_num_states,
+		memory.two_states
+	)
 	check_recording_size(recording, timepoints, total_num_states)
 
 	source_state, target_state = memory.two_states
