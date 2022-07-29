@@ -1,4 +1,7 @@
 
+
+TODO: given function for one cycle, it then combines them
+
 function driven_equilibrium(
 	cycles::Integer,
 	α::AbstractVector{<: Real},
