@@ -47,7 +47,7 @@ function main()
 	end
 
 	# Set up relaxivities
-	R = MRIEPG.XLargerYs.XLargerY(1 ./ reverse(T1), 1 ./ reverse(T2))
+	R = MRIEPG.XLargerYs.XLargerY(1 ./ reverse(T2), 1 ./ reverse(T1))
 	
 	# ConstantRelaxation
 	# TODO: Check minimal, full_in, full_out.
@@ -61,10 +61,10 @@ function main()
 			# Inner loop
 			begin
 				epgs[:, :, :, l], _ = MRIEPG.simulate(
-					Val(:full), kmax,
 					α, ϕ, TR,
+					(R.y[m], R.x[n]),
 					G, τ, D,
-					(R.x[m], R.y[n]),
+					kmax, Val(:full),
 					initial_state,
 					Val(:all)
 				)
@@ -93,10 +93,10 @@ function main()
 			nothing,
 			begin
 				epgs[:, :, :, l], _ = MRIEPG.simulate(
-					Val(:full), kmax,
 					α, ϕ, fill(TR, length(α)),
+					(R.y[m], R.x[n]),
 					G, τ, D,
-					(R.x[m], R.y[n]),
+					kmax, Val(:full),
 					initial_state,
 					Val(:all)
 				)
@@ -110,10 +110,10 @@ function main()
 	# TODO: Check minimal, full_in, full_out.
 	let
 		epgs, _ = MRIEPG.simulate(
-			Val(:full), kmax,
 			α, ϕ, TR,
-			G, τ, D,
 			R,
+			G, τ, D,
+			kmax, Val(:full),
 			repeat(initial_state, inner=(R.N, 1)),
 			Val(:all)
 		)
@@ -126,10 +126,10 @@ function main()
 	# TODO: Check minimal, full_in, full_out.
 	let
 		epgs, _ = MRIEPG.simulate(
-			Val(:full), kmax,
 			α, ϕ, fill(TR, length(α)),
-			G, τ, D,
 			R,
+			G, τ, D,
+			kmax, Val(:full),
 			repeat(initial_state, inner=(R.N, 1)),
 			Val(:all)
 		)
@@ -137,6 +137,7 @@ function main()
 		epgs = permutedims(epgs, (2, 3, 4, 1))
 		@test isapprox(epgs, epgs_matlab, rtol=1e-4)
 	end
+
 	#=
 	initial_state = repeat(initial_state, R.N)
 	@time epgs, _ = MRIEPG.simulate(Val(:full), kmax, α, ϕ, TR, G, τ, D, R, initial_state, Val(:all))
@@ -154,6 +155,49 @@ function main()
 	plt.legend()
 	plt.show()
 	=#
+
+	# Driven equilibrium
+	let
+		cycles = 8
+		G = [0.0, 3.0, 42.0, 0.0]
+		τ = [9.0, 3.5, 0.5, 7.0]
+		D = 2e-12
+		R1 = 1/1000
+		R2 = 1/100
+		R1s = 1 ./ [100, 200, 500, 1000, 2000]
+		R2s = 1 ./ [10, 50, 100, 1000]
+		R1s, R2s = reverse!.((R1s, R2s))
+		R = MRIEPG.XLargerYs.XLargerY(R2s, R1s)
+		kmax = 50
+		α = [[π, 0, 0]; deg2rad.(1:60); deg2rad.(59:-1:2)]
+		ϕ = zeros(length(α))
+		TR = Vector{Float64}(undef, length(α))
+		TR[1:3] .= 30.0
+		TR[4:end-1] .= 10.0
+		TR[end] = 500.0
+		local s = Array{ComplexF64, 2}(undef, length(R), cycles * length(TR))
+		i = 1
+		for r2 in R2s
+			for r1 in R1s
+				r1 ≥ r2 && continue
+				tmp = MRIEPG.simulate(
+					repeat(α, cycles),
+					repeat(ϕ, cycles),
+					repeat(TR, cycles),
+					(r1, r2),
+					G, τ, D,
+					kmax,
+					Val(:minimal)
+				)
+				s[i, :] = tmp
+				i += 1
+			end
+		end
+		s2 = MRIEPG.driven_equilibrium(cycles, α, ϕ, TR, R, G, τ, D, kmax, Val(:signal))
+		@assert all(v -> isapprox(v[1], v[2]; atol=2^(floor(log2(abs(v[1])))-52)), zip(s, s2))
+		# Note on choice of atol: one bit flipped because of x86 register spill
+	end
+
 end
 
 main()

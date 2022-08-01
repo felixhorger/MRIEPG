@@ -45,7 +45,7 @@ function simulate(
 	memory = allocate_memory(mode, timepoints, num_systems, kmax, initial_state, record)
 
 	# Simulate
-	simulate!(mode, kmax, rf_matrices, relaxation, num_systems, memory)
+	simulate!(1, timepoints, rf_matrices, relaxation, num_systems, kmax, mode, memory)
 
 	recording = reshape_recording(R, memory, record)
 	return select_return_value(mode, memory, recording)
@@ -54,13 +54,17 @@ end
 #TODO: Make function that prepares everything and returns a function that simulates for driven equilibrium
 
 
-# TODO: Check impact of using non-specific types <: Complex
+"""
+Returns memory with reordered source/target state
+"""
 function simulate!(
-	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
-	kmax::Int64, # I think a relaxation struct made with one kmax can be used for every kmax lower than that.
-	rf_matrices::Array{ComplexF64, 3},
+	t0::Integer, # One based indexing!
+	timepoints::Integer,
+	rf_matrices::AbstractArray{<: Complex, 3},
 	relaxation::Union{ConstantRelaxation, MultiTRRelaxation, MultiSystemRelaxation, MultiSystemMultiTRRelaxation},
-	num_systems::Int64,
+	num_systems::Integer,
+	kmax::Integer, # I think a relaxation struct made with one kmax can be used for every kmax lower than that.
+	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
 	memory::SimulationMemory
 )
 	# TODO: Not sure if @generated is required here, on the other hand this should ensure that the function
@@ -80,9 +84,9 @@ function simulate!(
 
 	# Check arguments
 	@assert size(rf_matrices, 1) == size(rf_matrices, 2) == 3
-	timepoints = size(rf_matrices, 3)
+	Δt = size(rf_matrices, 3)
+	check_relaxation(relaxation, Δt, kmax)
 	total_num_states = num_systems * (kmax+1)
-	check_relaxation(relaxation, timepoints, kmax)
 	@assert all(
 		m -> size(m, 1) >= total_num_states,
 		memory.two_states
@@ -90,12 +94,14 @@ function simulate!(
 	check_recording_size(recording, timepoints, total_num_states)
 
 	source_state, target_state = memory.two_states
-	 for t = 1:timepoints
+	 for trel = 1:Δt
+		t = trel + t0 - 1
 		upper = required_states(mode, t, timepoints, kmax)
 		simulate!(
-			mode, kmax, upper, t,
-			rf_matrices,
+			t, trel,
 			relaxation, num_systems,
+			rf_matrices,
+			upper, kmax, mode,
 			source_state, target_state,
 			recording
 		)
@@ -106,20 +112,21 @@ function simulate!(
 	# Reorder states in memory struct
 	memory = SimulationMemory((source_state, target_state), recording)
 
-	return
+	return memory
 end
 
 function simulate!(
-	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
-	kmax::Int64, # I think a relaxation struct made with a spcific kmax can be used for every kmax lower than that, wasn't tested though
-	upper::Int64,
-	t::Int64,
-	rf_matrices::Array{ComplexF64, 3},
+	t::Integer,
+	trel::Integer,
 	relaxation::Union{ConstantRelaxation, MultiTRRelaxation, MultiSystemRelaxation, MultiSystemMultiTRRelaxation},
-	num_systems::Int64,
-	source_state::Matrix{ComplexF64},
-	target_state::Matrix{ComplexF64},
-	recording::Union{Matrix{ComplexF64}, Array{ComplexF64, 3}, Nothing}
+	num_systems::Integer,
+	rf_matrices::AbstractArray{<: Complex, 3},
+	upper::Integer,
+	kmax::Integer, # I think a relaxation struct made with a spcific kmax can be used for every kmax lower than that, wasn't tested though
+	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
+	source_state::Matrix{<: Complex},
+	target_state::Matrix{<: Complex},
+	recording::Union{Matrix{<: Complex}, Array{<: Complex, 3}, Nothing}
 )
 	# No bounds checked!
 
@@ -130,11 +137,11 @@ function simulate!(
 	 @views mul!(
 	 	target_state[1:upper_systems, :],
 		source_state[1:upper_systems, :],
-		rf_matrices[:, :, t]
+		rf_matrices[:, :, trel]
 	)
 
 	# Store signal (F^-(k = 0)) or complete state
-	record_state(recording, target_state, t, num_systems)
+	record_state!(recording, target_state, t, num_systems)
 	#=
 		Note:
 		No need to apply any relaxation before getting the signal, because it is only a scaling.
@@ -145,7 +152,8 @@ function simulate!(
 	=#
 
 	# Apply relaxation (T1, T2 and diffusion)
-	apply_relaxation!(target_state, relaxation, upper, kmax, t)
+	apply_relaxation!(target_state, relaxation, upper, kmax, trel)
+	# Note: time is "shifted" in relaxation since each segment has its own relaxation
 
 	# Shift (by gradients)
 	 @views let total_num_states = size(target_state, 1)
@@ -196,3 +204,4 @@ reshape_recording(R::Union{NTuple{2, Float64}, XLargerY{Float64}}, memory::Simul
 	(recording, memory.two_states[1])
 end
 @inline select_return_value(mode::Union{Val{:minimal}, Val{:full_in}}, _::SimulationMemory, recording) = recording
+

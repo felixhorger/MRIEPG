@@ -135,7 +135,7 @@ end
 		@. state[1:upper, 1] *= E2 * D2
 		@. state[1:upper, 2] *= E2 * D2
 		@. state[1:upper, 3] *= E1 * D1
-		state[1, 3] += 1.0 - E1
+		state[1, 3] += 1 - E1
 	end
 	return
 end
@@ -207,15 +207,14 @@ function compute_relaxation(
 
 	# Diffusion
 	b_longitudinal, b_transverse = diffusion_b_values(G, τ, kmax)
-	#here 
 	D1 = (@. b_longitudinal = diffusion_factor(b_longitudinal, D))
 	D2 = (@. b_transverse = diffusion_factor(b_transverse, D))
 
 	# Compute exponentials for T1, T2 relaxation factors
 	E = XLargerY(
-		(@. exp(-TR * R.x)), # E1
-		(@. exp(-TR * R.y)), # E2
-		R.Δ
+		(@. exp(-TR * R.x)), # E2, switched because R2 > R1
+		(@. exp(-TR * R.y)), # E1
+		R.upper
 	)
 
 	return MultiSystemRelaxation(E, D1, D2), R.N
@@ -232,8 +231,8 @@ end
 		relaxation.E,
 		relaxation.D1[k],
 		relaxation.D2[k],
-		relaxation.E.x[m],
-		relaxation.E.y[n]
+		relaxation.E.y[m], # R1
+		relaxation.E.x[n] # R2
 	)
 	return
 end
@@ -281,11 +280,11 @@ function compute_relaxation(
 	# Compute exponentials for T1, T2 relaxation factors
 	timepoints = length(TR)
 	E = Vector{XLargerY{Float64}}(undef, timepoints)
-	@inbounds for t = 1:timepoints
+	 for t = 1:timepoints
 		E[t] = XLargerY(
-			(@. exp(-TR[t] * R.x)), # E1
-			(@. exp(-TR[t] * R.y)), # E2
-			R.Δ
+			(@. exp(-TR[t] * R.x)), # E2, switched because R2 > R1
+			(@. exp(-TR[t] * R.y)), # E1
+			R.upper
 		)
 	end
 	return MultiSystemMultiTRRelaxation(E, D1, D2), R.N
@@ -302,9 +301,10 @@ end
 		relaxation.E[t],
 		relaxation.D1[k, t],
 		relaxation.D2[k, t],
-		relaxation.E[t].x[m],
-		relaxation.E[t].y[n]
+		relaxation.E[t].y[m], # R1
+		relaxation.E[t].x[n] # R2
 	)
+
 	return
 end
 
