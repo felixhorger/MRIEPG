@@ -1,9 +1,9 @@
 
 # Prepare a single simulation run
 # This can be in struct because it should be hidden to the user, no parameters should be set here
-struct SimulationMemory{T <: Union{Matrix{<: Complex}, Array{<: Complex, 3}, Nothing}}
-	two_states::NTuple{2, Matrix{<: Complex}}
-	recording::T
+struct SimulationMemory{T1 <: Matrix{<: Complex}, T2 <: Union{Matrix{<: Complex}, Array{<: Complex, 3}, Nothing}}
+	two_states::NTuple{2, T1}
+	recording::T2
 end
 
 function allocate_memory(
@@ -13,7 +13,7 @@ function allocate_memory(
 	kmax::Integer,
 	initial_state::Union{Nothing, AbstractMatrix{<: Number}} = nothing,
 	record::Union{Val{:signal}, Val{:all}, Val{:nothing}} = Val(:signal)
-)::SimulationMemory
+)
 	# How many states are there in total?
 	total_num_states = (kmax+1) * num_systems # +1 for k = 0
 

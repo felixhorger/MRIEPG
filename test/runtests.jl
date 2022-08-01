@@ -5,6 +5,32 @@ import PyPlot as plt
 
 import MRIEPG
 
+function test_time()
+	t0 = 1
+	timepoints = 121
+	G = [0.0, 3.0, 42.0, 0.0]
+	τ = [9.0, 3.5, 0.5, 7.0]
+	D = 2e-12
+	R1 = 1/1000
+	R2 = 1/100
+	R1s = 1 ./ [100, 200, 500, 1000, 2000]
+	R2s = 1 ./ [10, 50, 100, 1000]
+	R1s, R2s = reverse!.((R1s, R2s))
+	R = MRIEPG.XLargerYs.XLargerY(R2s, R1s)
+	TR = Vector{Float64}(undef, timepoints)
+	TR[1:3] .= 30.0
+	TR[4:end-1] .= 10.0
+	TR[end] = 500.0
+	kmax = 50
+	relaxation, num_systems = MRIEPG.compute_relaxation(TR, R, G, τ, D, kmax)
+	rf_matrices = zeros(ComplexF64, 3, 3, timepoints)
+	memory = MRIEPG.allocate_memory(Val(:minimal), timepoints, num_systems, kmax, nothing, Val(:signal))
+	MRIEPG.simulate!(t0, timepoints, rf_matrices, relaxation, num_systems, kmax, Val(:minimal), memory)
+	@time MRIEPG.simulate!(t0, timepoints, rf_matrices, relaxation, num_systems, kmax, Val(:minimal), memory)
+	@time MRIEPG.simulate!(t0, timepoints, rf_matrices, relaxation, num_systems, kmax, Val(:minimal), memory)
+	# Twice because compilation
+end
+
 function main()
 	# Compare EPG-X simulation (matlab and cpp) to the julia version
 
