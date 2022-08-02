@@ -65,7 +65,7 @@ function simulate!(
 	num_systems::Integer,
 	kmax::Integer, # I think a relaxation struct made with one kmax can be used for every kmax lower than that.
 	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
-	memory::SimulationMemory
+	memory::T where T <: SimulationMemory
 )
 	# TODO: Not sure if @generated is required here, on the other hand this should ensure that the function
 	# is compiled for any combination of input types
