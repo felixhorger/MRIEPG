@@ -1,7 +1,7 @@
 
 # Prepare a single simulation run
 # This can be in struct because it should be hidden to the user, no parameters should be set here
-struct SimulationMemory{T1 <: Matrix{<: Complex}, T2 <: Union{Matrix{<: Complex}, Array{<: Complex, 3}, Nothing}}
+struct SimulationMemory{T1 <: Matrix{<: Complex}, T2 <: Union{Matrix{<: Complex}, Array{<: Complex, 3}}}
 	two_states::NTuple{2, T1}
 	recording::T2
 end
@@ -12,7 +12,7 @@ function allocate_memory(
 	num_systems::Integer,
 	kmax::Integer,
 	initial_state::Union{Nothing, AbstractMatrix{<: Number}} = nothing,
-	record::Union{Val{:signal}, Val{:all}, Val{:nothing}} = Val(:signal)
+	record::Union{Val{:signal}, Val{:all}} = Val(:signal)
 )
 	# How many states are there in total?
 	total_num_states = (kmax+1) * num_systems # +1 for k = 0
@@ -34,7 +34,6 @@ end
 @inline function check_recording_size(recording::Array{ComplexF64, 3}, timepoints::Int64, total_num_states::Int64)
 	@assert size(recording) == (total_num_states, 3, timepoints)
 end
-@inline check_recording_size(recording::Nothing, _::Int64, _::Int64) = nothing
 
 
 
@@ -91,7 +90,6 @@ end
 )
 	Array{ComplexF64, 3}(undef, total_num_states, 3, timepoints)
 end
-@inline allocate_recording(record::Val{:nothing}, _::Integer, _::Integer, _::Integer) = nothing
 
 
 # Function to record the state of the graph, depending on record mode
@@ -113,7 +111,18 @@ end
 	 @views recording[:, :, t] = state
 	 return
 end
-@inline record_state!(recording::Nothing, _::Matrix{ComplexF64}, _::Integer, _::Integer) = nothing
 
-@inline reset_memory!(memory::SimulationMemory) = memory.two_states[2] .= 0
+"""
+Resets source state to thermal equilibrium
+"""
+@inline function reset_source_state!(memory::T, num_systems::Integer) where T <: SimulationMemory
+	memory.two_states[1][:, 1:2] .= 0
+	memory.two_states[1][1:num_systems, 3] .= 1
+	memory.two_states[1][num_systems+1:end, 3] .= 0
+	return
+end
+@inline function reset_target_state!(memory::T) where T <: SimulationMemory
+	memory.two_states[2] .= 0
+	return
+end
 
