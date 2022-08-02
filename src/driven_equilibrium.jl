@@ -24,7 +24,7 @@ function driven_equilibrium(
 		rf_pulse_matrix!(rf_matrices[:, :, t], α[t], ϕ[t])
 	end
 
-	# Precompute inter-cycle relaxation
+	# Precompute relaxation
 	relaxation, num_systems = compute_relaxation(TR, R, G, τ, D, kmax)
 
 	# Allocate memory
@@ -77,9 +77,27 @@ function driven_equilibrium!(
 
 	for cycle = 1:cycles
 		memory = run!(cycle, memory)
-		reset_memory!(memory)
+		reset_target_state!(memory)
 	end
 
 	return memory
+end
+
+function driven_equilibrium_convergence(
+	signal::AbstractVector{<: Number},
+	timepoints_per_cycle::Integer
+)
+	timepoints = length(signal)
+	deviation = Vector{Float64}(undef, timepoints ÷ timepoints_per_cycle - 1)
+	for cycle in 1:length(deviation)
+		t = (cycle-1) * timepoints_per_cycle + 1
+		t1 = t + timepoints_per_cycle - 1
+		t2 = t1 + timepoints_per_cycle - 1
+		deviation[cycle] = sum(
+			v -> abs2(v[1] - v[2]),
+			@views zip(signal[t1+1:t2], signal[t:t1])
+		) |> sqrt
+	end
+	return deviation
 end
 
