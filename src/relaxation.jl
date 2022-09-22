@@ -23,6 +23,7 @@ function compute_relaxation(
 	kmax::Integer
 )::Tuple{ConstantRelaxation, Int64}
 	@assert TR > 0
+	@assert sum(τ) == TR
 	# Compute combined effect of T1, T2 and diffusion
 	E1 = exp(-TR * R[1])
 	E2 = exp(-TR * R[2])
@@ -50,6 +51,9 @@ end
 
 
 
+"""
+	Assumes that the gradients are the same in every TR, so only the "dead time" afterwards changes
+"""
 function compute_multiTR_diffusion(
 	TR::AbstractVector{<: Real},
 	G::AbstractVector{<: Real},
