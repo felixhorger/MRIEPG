@@ -83,20 +83,28 @@ function driven_equilibrium!(
 	return memory
 end
 
+"""
+	NRMSE
+"""
 function driven_equilibrium_convergence(
 	signal::AbstractVector{<: Number},
-	timepoints_per_cycle::Integer
+	num_time_per_cycle::Integer
 )
-	timepoints = length(signal)
-	deviation = Vector{Float64}(undef, timepoints ÷ timepoints_per_cycle - 1)
+	num_time = length(signal)
+	deviation = Vector{Float64}(undef, num_time ÷ num_time_per_cycle - 1)
 	for cycle in 1:length(deviation)
-		t = (cycle-1) * timepoints_per_cycle + 1
-		t1 = t + timepoints_per_cycle - 1
-		t2 = t1 + timepoints_per_cycle - 1
-		deviation[cycle] = sum(
-			v -> abs2(v[1] - v[2]),
-			@views zip(signal[t1+1:t2], signal[t:t1])
-		) |> sqrt
+		t0 = (cycle-1) * num_time_per_cycle + 1
+		t1 = t0 + num_time_per_cycle - 1
+		t2 = t1 + num_time_per_cycle - 1
+		Δ = 0.0
+		Σ = 0.0
+		for t = t0:t1
+			prev = signal[t]
+			this = signal[t+num_time_per_cycle]
+			Δ += abs2(prev - this)
+			Σ += abs2(prev + this)
+		end
+		deviation[cycle] = sqrt(2.0 * Δ / Σ)
 	end
 	return deviation
 end
