@@ -20,7 +20,7 @@ function driven_equilibrium(
 	timepoints = cycles * timepoints_per_cycle
 
 	rf_matrices = Array{ComplexF64, 3}(undef, 3, 3, timepoints_per_cycle)
-	 @views for t = 1:timepoints_per_cycle
+	@inbounds @views for t = 1:timepoints_per_cycle
 		rf_pulse_matrix!(rf_matrices[:, :, t], α[t], ϕ[t])
 	end
 
@@ -91,7 +91,9 @@ function driven_equilibrium_convergence(
 	num_time_per_cycle::Integer
 )
 	num_time = length(signal)
-	deviation = Vector{Float64}(undef, num_time ÷ num_time_per_cycle - 1)
+	num_cycles, remainder = divrem(num_time, num_time_per_cycle)
+	@assert remainder == 0
+	deviation = Vector{Float64}(undef, num_cycles - 1)
 	for cycle in 1:length(deviation)
 		t0 = (cycle-1) * num_time_per_cycle + 1
 		t1 = t0 + num_time_per_cycle - 1

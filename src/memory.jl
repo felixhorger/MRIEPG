@@ -53,7 +53,7 @@ function allocate_states(
 		zeros(ComplexF64, total_num_states, 3), # +1 for k = 0
 		zeros(ComplexF64, total_num_states, 3) # Needs to be zeros, otherwise looks ugly in plots
 	)
-	 two_states[1][1:num_systems, 3] .= 1 # Set M0 of source state
+	two_states[1][1:num_systems, 3] .= 1 # Set M0 of source state
 	return two_states
 end
 
@@ -99,7 +99,7 @@ end
 	t::Integer,
 	num_systems::Integer
 )
-	 @views recording[:, t] = state[1:num_systems, 2] # Record F^-(k = 0)
+	 @inbounds @views recording[:, t] = state[1:num_systems, 2] # Record F^-(k = 0)
 	 return
 end
 @inline function record_state!(
@@ -108,7 +108,7 @@ end
 	t::Integer,
 	_::Integer
 )
-	 @views recording[:, :, t] = state
+	 @inbounds @views recording[:, :, t] = state
 	 return
 end
 
@@ -116,13 +116,15 @@ end
 Resets source state to thermal equilibrium
 """
 @inline function reset_source_state!(memory::T, num_systems::Integer) where T <: SimulationMemory
-	memory.two_states[1][:, 1:2] .= 0
-	memory.two_states[1][1:num_systems, 3] .= 1
-	memory.two_states[1][num_systems+1:end, 3] .= 0
+	@inbounds begin
+		memory.two_states[1][:, 1:2] .= 0
+		memory.two_states[1][1:num_systems, 3] .= 1
+		memory.two_states[1][num_systems+1:end, 3] .= 0
+	end
 	return
 end
 @inline function reset_target_state!(memory::T) where T <: SimulationMemory
-	memory.two_states[2] .= 0
+	@inbounds memory.two_states[2] .= 0
 	return
 end
 

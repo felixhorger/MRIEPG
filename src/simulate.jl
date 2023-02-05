@@ -37,7 +37,7 @@ function simulate(
 
 	# Precompute pulse matrices
 	rf_matrices = Array{ComplexF64, 3}(undef, 3, 3, timepoints)
-	 @views for t = 1:timepoints
+	@inbounds @views for t = 1:timepoints
 		rf_pulse_matrix!(rf_matrices[:, :, t], α[t], ϕ[t])
 	end
 
@@ -134,7 +134,7 @@ function simulate!(
 	upper_systems = num_systems * upper
 
 	# Apply pulse
-	 @views mul!(
+	@inbounds @views mul!(
 	 	target_state[1:upper_systems, :],
 		source_state[1:upper_systems, :],
 		rf_matrices[:, :, trel]
@@ -156,7 +156,7 @@ function simulate!(
 	# Note: time is "shifted" in relaxation since each segment has its own relaxation
 
 	# Shift (by gradients)
-	 @views let total_num_states = size(target_state, 1)
+	@inbounds @views let total_num_states = size(target_state, 1)
 		# F^+(k) goes to F^+(k+1), only for k > 0
 		# The first i is the first index of the k-state which is newly populated by the shift
 		#println("+") # Excuse the shotgun debug comment clutter
@@ -174,8 +174,6 @@ function simulate!(
 		end
 		# F^-(k = -upper+1) becomes unpopulated
 		target_state[upper_systems-num_systems+1 : upper_systems, 2] .= 0
-		#println("$(upper_systems-num_systems+1 : upper_systems) -> 0")
-		#sleep(10)
 		# Longitudinal states are not getting shifted
 	end
 
@@ -197,7 +195,12 @@ end
 )
 	copy(memory.recording)
 end
-reshape_recording(R::Union{NTuple{2, Float64}, XLargerY{Float64}}, memory::SimulationMemory, record::Val{:nothing}) = nothing
+@inline reshape_recording(
+	R::Union{NTuple{2, Float64},
+	XLargerY{Float64}},
+	memory::SimulationMemory,
+	record::Val{:nothing}
+) = nothing
 
 # Depending on the simulation mode, select the right return value
 @inline function select_return_value(mode::Union{Val{:full_out}, Val{:full}}, memory::SimulationMemory, recording)

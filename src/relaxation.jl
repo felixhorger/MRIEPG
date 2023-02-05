@@ -40,7 +40,7 @@ end
 	_::Int64
 )
 	# Fixed types because used in functions defined here, so no generic types required
-	 @views begin
+	@inbounds @views begin
 		for (s, ED) in enumerate((relaxation.ED2, relaxation.ED2, relaxation.ED1))
 			state[1:upper, s] .*= ED[1:upper]
 		end
@@ -65,7 +65,7 @@ function compute_multiTR_diffusion(
 	b_longitudinal_per_time, b_transverse_contribution = prepare_diffusion_b_values(G, τ, kmax)
 	D1 = Matrix{Float64}(undef, kmax+1, timepoints)
 	D2 = Matrix{Float64}(undef, kmax+1, timepoints)
-	 @views for t = 1:timepoints
+	@inbounds @views for t = 1:timepoints
 		@. D1[:, t] = b_longitudinal_per_time * TR[t]
 		@. D2[:, t] = D1[:, t] + b_transverse_contribution
 		@. D1[:, t] = diffusion_factor(D1[:, t], D)
@@ -129,7 +129,7 @@ end
 	_::Int64,
 	t::Int64
 )
-	 @views let
+	@inbounds @views let
 		E1 = relaxation.E1[t] 
 		E2 = relaxation.E2[t] 
 		D1 = relaxation.D1[1:upper, t]
@@ -150,30 +150,32 @@ end
 macro multi_system_relaxation_iterate(grid, D1, D2, E1, E2)
 	# These arguments are a bit handwavy
 	esc(quote
-		# Iterate systems and k (system index changes fastest, then k)
-		for k = 1:upper # k not in physical units
-			# Get diffusion weights
-			D1 = $D1
-			D2 = $D2
-			# Offset in array due to k
-			k_offset = (k - 1) * $grid.N
-			 @views XLargerYs.@iterate(
+		@inbounds begin
+			# Iterate systems and k (system index changes fastest, then k)
+			for k = 1:upper # k not in physical units
+				# Get diffusion weights
+				D1 = $D1
+				D2 = $D2
+				# Offset in array due to k
+				k_offset = (k - 1) * $grid.N
+				@views XLargerYs.@iterate(
+					$grid,
+					# Compute transverse relaxation in outer loop
+					state[i+k_offset : j+k_offset, 1:2] .*= $E2 * D2,
+					# Compute first part of longitudinal relaxation in inner loop (decrease current value of magnetisation)
+					state[l + k_offset, 3] *= $E1 * D1
+				)
+			end
+
+			# Second part of longitudinal relaxation (increase magnetisation towards M0)
+			@views XLargerYs.@iterate(
 				$grid,
-				# Compute transverse relaxation in outer loop
-				state[i+k_offset : j+k_offset, 1:2] .*= $E2 * D2,
-				# Compute first part of longitudinal relaxation in inner loop (decrease current value of magnetisation)
-				state[l + k_offset, 3] *= $E1 * D1
+				# Do nothing in outer loop because nothing R2 related happens
+				nothing,
+				# Relax longitudinal part
+				state[l, 3] += 1 - $E1 # Add to Z(k = 0) state
 			)
 		end
-
-		# Second part of longitudinal relaxation (increase magnetisation towards M0)
-		 @views XLargerYs.@iterate(
-			$grid,
-			# Do nothing in outer loop because nothing R2 related happens
-			nothing,
-			# Relax longitudinal part
-			state[l, 3] += 1 - $E1 # Add to Z(k = 0) state
-		)
 	end)
 end
 
