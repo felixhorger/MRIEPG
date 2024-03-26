@@ -110,7 +110,7 @@ function compute_relaxation(
 	# Check arguments
 	@assert all(t -> t > 0, TR)
 	@assert R[1] > 0 && R[2] > 0
-	# G, τ, kmax checked in compute_multiTR_diffusion below
+	# G, τ, kmax checked in compute_multiTR_diffusion
 
 	# Diffusion
 	D1, D2 = compute_multiTR_diffusion(TR, G, τ, D, kmax)
@@ -130,8 +130,8 @@ end
 	t::Int64
 )
 	@inbounds @views let
-		E1 = relaxation.E1[t] 
-		E2 = relaxation.E2[t] 
+		E1 = relaxation.E1[t]
+		E2 = relaxation.E2[t]
 		D1 = relaxation.D1[1:upper, t]
 		D2 = relaxation.D2[1:upper, t]
 		# Apparently this does not allocate memory for the views ... but haven't checked in this scenario,

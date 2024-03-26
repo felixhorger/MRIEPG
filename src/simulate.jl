@@ -3,7 +3,7 @@
 	The convention that variables are lower case is not fully satisfied herein.
 	Gradients are denoted G, diffusion coefficient D, repetition time TR, relaxivities R.
 =#
-# TODO: use mode not for kmax, but for e.g. GRE, TSE, ...
+# TODO: use mode not for kmax, but for e.g. GRE, (T)SE, ... ?
 # rename mode to mask or sth
 """
 	α, ϕ in radians
@@ -141,6 +141,8 @@ function simulate!(
 	)
 
 	# Store signal (F^-(k = 0)) or complete state
+	# TODO: this does not consider echo time. However, the effect of TE can
+	# be calculated by the user retrospectively.
 	record_state!(recording, target_state, t, num_systems)
 	#=
 		Note:

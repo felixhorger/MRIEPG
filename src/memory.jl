@@ -1,6 +1,7 @@
 
 # Prepare a single simulation run
 # This can be in struct because it should be hidden to the user, no parameters should be set here
+# TODO: T1 and T2 are misnomers here, change
 struct SimulationMemory{T1 <: Matrix{<: Complex}, T2 <: Union{Matrix{<: Complex}, Array{<: Complex, 3}}}
 	two_states::NTuple{2, T1}
 	recording::T2
