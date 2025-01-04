@@ -1,3 +1,4 @@
+# TODO: one thing here is that recording could be omitted for getting into steady state, but currently it isn't
 
 function driven_equilibrium(
 	cycles::Integer,

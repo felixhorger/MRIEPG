@@ -29,7 +29,29 @@ end
 	rf_pulse_matrix!(out, α, ϕ)
 end
 
+
+function apply_rf_pulse_matrices!(
+	rf_matrices::AbstractArray{<: Complex, 3},
+	source_state::Matrix{<: Complex},
+	target_state::Matrix{<: Complex},
+	trel::Integer,
+	upper_systems::Integer # TODO rename?
+)
+	@inbounds @views mul!(
+	 	target_state[1:upper_systems, :],
+		source_state[1:upper_systems, :],
+		rf_matrices[:, :, trel]
+	)
+	return
+end
+
+
+
+
 @inline function rewind_phase!(signal::Vector{<: Complex}, ϕ::Vector{<: Real})::Vector{<: Complex}
 	@. signal *= exp(im * ϕ)
 end
+
+
+
 

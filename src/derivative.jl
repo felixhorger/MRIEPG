@@ -33,7 +33,8 @@ end
 function simulate_derivative!(
 	t::Integer,
 	trel::Integer,
-	relaxation::ConstantRelaxation, # TODO: how would this work with multiple systems? Or varying TR
+	relaxation::Union{ConstantRelaxation}, # TODO: how would this work with multiple systems? Or varying TR
+	relaxation_derivative::Union{ConstantRelaxation}, # TODO add other relaxation structs
 	num_systems::Integer,
 	num_parameters::Integer, # number of signals that will be simulated is num_systems * (1 + 2 * num_parameters)
 	rf_matrices::AbstractArray{<: Complex, 3},
@@ -42,7 +43,10 @@ function simulate_derivative!(
 	mode::Union{Val{:minimal}, Val{:full}, Val{:full_in}, Val{:full_out}},
 	source_state::Matrix{<: Complex},
 	target_state::Matrix{<: Complex},
-	recording::Union{Matrix{<: Complex}, Array{<: Complex, 3}, Nothing}
+	source_state_derivative::Matrix{<: Complex},
+	target_state_derivative::Matrix{<: Complex},
+	recording::Union{Matrix{<: Complex}, Array{<: Complex, 3}, Nothing},
+	recording_derivative::Union{Matrix{<: Complex}, Array{<: Complex, 3}, Nothing}
 )
 	#=
 		sₜ(p) = A(p) ⋅ sₜ₋₁(p) + r(p)
@@ -60,42 +64,45 @@ function simulate_derivative!(
 		otherwise wrong scaling
 	=#
 
-	# the first axis of source_state should be ordered as
-	#=	[
-			signal,
-			<place holder p₁ system 1>, <place holder p₂ system 1> ...,
-			∂sₜ₋₁/∂p₁ system 1, ∂sₜ₋₁/∂p₂ system 1, ...
-		]
-	=#
+	TODO: state = [signal, dp1, dp2, ..., k=1:3]
+	apply rf (single call)
+	record all (single call)
+	apply derivative relaxation to state[1:n_params+1:end, :] to get (∂A/∂p s), can I reuse state[1:n, :] bc non-consecutive? Otherwise need separate array
+	apply longitudinal recovery to signal in state
+	apply derivative longitudinal recovery to derivative in state or to (∂A/∂p s), for this apply the function to state[2:numparams+1:end, :] or could just write it myself, copying the contents of apply_longitudinal_recovery!(). This might also be better since for T1/T2 something different needs to be done.
+	add (∂A/∂p s) to the derivative in state
+	apply gradient shift to state (single call)
 
-	# TODO: split simulate!() function into rf(), relaxation already in function, and spoiler shift
-	# Then, use that in here to make more efficient
-	# TODO: make apply_relaxation(target, source,...) which should be able to handle the case target==source
 
-	num_placeholders = num_parameters * num_systems
-	num_signals = 1 + 2 * num_placeholders
 
-	# Copy sₜ₋₁(p) into place holders
-	# TODO: turbo copy possible?
-	for s = 1:3
-		for k = 1:upper
-			i = (k-1) * num_signals + 1
-			j = i + num_placeholders
-			@views source_state[(i+1):j, s] .= source_state[i, s]
-			# i is the first index for that state (the actual signal),
-			# and i+1 then is the first place holder
-		end
-	end
+	num_signals = (1 + num_parameters) * num_systems
+	upper_systems = num_signals * upper
 
-	# Apply matrices (A(p) and ∂A(p)/∂p) and relaxation r(p), 0, and ∂r(p)/∂p
-	simulate!(
-		t, trel,
-		relaxation, num_systems,
-		rf_matrices,
-		upper, kmax, mode,
-		source_state, target_state,
-		recording
-	)
+	# 1) Apply pulse matrices and record signal
+	apply_rf_pulse_matrices!.((
+		(rf_matrices, source_state,            target_state,            trel, upper_systems),
+		(rf_matrices, source_state_derivative, target_state_derivative, trel, upper_systems)
+	))
+	record_state!.((
+		(recording,            target_state,            t, num_signals),
+		(recording_derivative, target_state_derivative, t, num_signals)
+	))
+
+	# 2) Apply relaxation
+	# ∂A(p)/∂p: target_state -> source state
+	apply_relaxation!(source_state, target_state, derivative_relaxation, upper, kmax, trel)
+
+	apply_longitudinal_recovery!(target_state, relaxation, trel)
+
+
+	gradient_shift!(target_state, num_systems, upper_systems)
+
+
+
+
+
+
+	# Apply matrices (A(p) and ) and relaxation r(p), 0, and ∂r(p)/∂p
 
 	# Apply rule to calculate derivative for target state ...
 	for s = 1:3

@@ -30,7 +30,7 @@
 	# Precalculate some terms
 	#=
 		b_t	= b_l
-			  + k * [ΔK * sum_{gradients} τ (2K0 + dK)]				# =: k * χ
+			  + k * [ΔK * sum_{gradients} τ (2K0 + dK)]			# =: k * χ
 			  + [sum_{gradients} τ (K0^2 + dK^2 / 3 + K0 * dK)]		# =: ξ
 	=#
 	# Difference to the longitudinal b-values due to changing gradients

@@ -32,20 +32,30 @@ function compute_relaxation(
 	ED2 = (@. b_transverse = E2 * diffusion_factor(b_transverse, D))
 	return ConstantRelaxation(1 - E1, ED1, ED2), 1
 end
-@inline function apply_relaxation!(
+@inline @inbounds @views function apply_relaxation!( # TODO: inline?
+	target_state::AbstractMatrix{ComplexF64},
+	source_state::AbstractMatrix{ComplexF64},
+	relaxation::ConstantRelaxation,
+	upper::Int64,
+	_::Int64,
+	_::Int64
+)
+	for (s, ED) in enumerate((relaxation.ED2, relaxation.ED2, relaxation.ED1))
+		@. target_state[1:upper, s] = source_state[1:upper, s] * ED[1:upper]
+	end
+
+	return
+end
+
+@inline @inbounds function apply_longitudinal_recovery!(
 	state::AbstractMatrix{ComplexF64},
 	relaxation::ConstantRelaxation,
 	upper::Int64,
 	_::Int64,
 	_::Int64
 )
-	# Fixed types because used in functions defined here, so no generic types required
-	@inbounds @views begin
-		for (s, ED) in enumerate((relaxation.ED2, relaxation.ED2, relaxation.ED1))
-			state[1:upper, s] .*= ED[1:upper]
-		end
-		state[1, 3] += relaxation.one_minus_E1
-	end
+	state[1, 3] += relaxation.one_minus_E1
+
 	return
 end
 
@@ -122,62 +132,39 @@ function compute_relaxation(
 	return MultiTRRelaxation(E1, E2, D1, D2), 1 # num_systems
 end
 
-@inline function apply_relaxation!(
-	state::Matrix{ComplexF64},
+@inline @inbounds @views function apply_relaxation!(
+	target_state::Matrix{ComplexF64},
+	source_state::Matrix{ComplexF64},
 	relaxation::MultiTRRelaxation,
 	upper::Int64,
 	_::Int64,
 	t::Int64
 )
-	@inbounds @views let
-		E1 = relaxation.E1[t]
-		E2 = relaxation.E2[t]
-		D1 = relaxation.D1[1:upper, t]
-		D2 = relaxation.D2[1:upper, t]
-		# Apparently this does not allocate memory for the views ... but haven't checked in this scenario,
-		# only REPL sandbox
-		@. state[1:upper, 1] *= E2 * D2
-		@. state[1:upper, 2] *= E2 * D2
-		@. state[1:upper, 3] *= E1 * D1
-		state[1, 3] += 1 - E1
-	end
+	E1 = relaxation.E1[t]
+	E2 = relaxation.E2[t]
+	D1 = relaxation.D1[1:upper, t]
+	D2 = relaxation.D2[1:upper, t]
+	# Apparently this does not allocate memory for the views ... but haven't checked in this scenario,
+	# only REPL sandbox
+	@. target_state[1:upper, 1] = source_state[1:upper, 1] * E2 * D2
+	@. target_state[1:upper, 2] = source_state[1:upper, 2] * E2 * D2
+	@. target_state[1:upper, 3] = source_state[1:upper, 3] * E1 * D1
+
 	return
 end
 
 
-
-# Macro for not duplicating the algorithm for traversing through systems
-macro multi_system_relaxation_iterate(grid, D1, D2, E1, E2)
-	# These arguments are a bit handwavy
-	esc(quote
-		@inbounds begin
-			# Iterate systems and k (system index changes fastest, then k)
-			for k = 1:upper # k not in physical units
-				# Get diffusion weights
-				D1 = $D1
-				D2 = $D2
-				# Offset in array due to k
-				k_offset = (k - 1) * $grid.N
-				@views XLargerYs.@iterate(
-					$grid,
-					# Compute transverse relaxation in outer loop
-					state[i+k_offset : j+k_offset, 1:2] .*= $E2 * D2,
-					# Compute first part of longitudinal relaxation in inner loop (decrease current value of magnetisation)
-					state[l + k_offset, 3] *= $E1 * D1
-				)
-			end
-
-			# Second part of longitudinal relaxation (increase magnetisation towards M0)
-			@views XLargerYs.@iterate(
-				$grid,
-				# Do nothing in outer loop because nothing R2 related happens
-				nothing,
-				# Relax longitudinal part
-				state[l, 3] += 1 - $E1 # Add to Z(k = 0) state
-			)
-		end
-	end)
+@inline @inbounds function apply_longitudinal_recovery!(
+	state::Matrix{ComplexF64}, # TODO: actually, this should be consistent with apply_relaxation!() source target?
+	relaxation::MultiTRRelaxation,
+	upper::Int64,
+	_::Int64,
+	t::Int64
+)
+	state[1, 3] += 1 - relaxation.E1[t]
+	return
 end
+
 
 
 # Scalar TR and vector valued R1, R2
@@ -226,8 +213,45 @@ function compute_relaxation(
 	return MultiSystemRelaxation(E, D1, D2), R.N
 end
 
-@inline function apply_relaxation!(
-	state::Matrix{ComplexF64},
+# Macro for not duplicating the algorithm for traversing through systems
+macro multi_system_relaxation_iterate(grid, D1, D2, E1, E2)
+	# These arguments are a bit handwavy
+	esc(quote
+		# Iterate systems and k (system index changes fastest, then k)
+		for k = 1:upper # k not in physical units
+			# Get diffusion weights
+			D1 = $D1
+			D2 = $D2
+			# Offset in array due to k
+			k_offset = (k - 1) * $grid.N
+			@views XLargerYs.@iterate(
+				$grid,
+				# Compute transverse relaxation in outer loop
+				(@. target_state[i+k_offset : j+k_offset, 1:2] = source_state[i+k_offset : j+k_offset, 1:2] * $E2 * D2),
+				# Compute first part of longitudinal relaxation in inner loop (decrease current value of magnetisation)
+				target_state[l + k_offset, 3] *= $E1 * D1
+			)
+		end
+	end)
+end
+
+
+macro multi_system_longitudinal_recovery_iterate(grid, E1)
+	# These arguments are a bit handwavy
+	esc(quote
+		@views XLargerYs.@iterate(
+			$grid,
+			# Do nothing in outer loop because nothing R2 related happens
+			nothing,
+			# Relax longitudinal part
+			state[l, 3] += 1 - $E1 # Add to Z(k = 0) state
+		)
+	end)
+end
+
+@inline @inbounds function apply_relaxation!(
+	target_state::Matrix{ComplexF64},
+	source_state::Matrix{ComplexF64},
 	relaxation::MultiSystemRelaxation,
 	upper::Int64,
 	kmax::Int64,
@@ -237,8 +261,20 @@ end
 		relaxation.E,
 		relaxation.D1[k],
 		relaxation.D2[k],
-		relaxation.E.y[m], # R1
-		relaxation.E.x[n] # R2
+		relaxation.E.y[m], # E1
+		relaxation.E.x[n] # E2
+	)
+	return
+end
+
+@inline @inbounds function apply_longitudinal_recovery!(
+	state::Matrix{ComplexF64},
+	relaxation::MultiSystemRelaxation,
+	_::Int64
+)
+	 @multi_system_longitudinal_recovery_iterate(
+		relaxation.E,
+		relaxation.E.y[m], # E1
 	)
 	return
 end
@@ -254,14 +290,15 @@ struct MultiSystemMultiTRRelaxation
 end
 supported_kmax(relaxation::MultiSystemMultiTRRelaxation) = length(relaxation.D1) - 1
 function check_relaxation(relaxation::MultiSystemMultiTRRelaxation, timepoints::Integer, kmax::Integer)
-	if any(
-		(
-			length(relaxation.E),
-			size.((relaxation.D1, relaxation.D2), 2)...
-		) .!= timepoints
-	)
-		error("Relaxation data structure does not have a matching time axis.")
-	end
+	# TODO: I don't think the below is required?
+	#if any(
+	#	(
+	#		length(relaxation.E),
+	#		size.((relaxation.D1, relaxation.D2), 2)...
+	#	) .!= timepoints
+	#)
+	#	error("Relaxation data structure does not have a matching time axis.")
+	#end
 	if any(size.((relaxation.D1, relaxation.D2), 1) .<= kmax)
 		error("kmax of the relaxation data structure is too small.")
 	end
@@ -296,8 +333,9 @@ function compute_relaxation(
 	return MultiSystemMultiTRRelaxation(E, D1, D2), R.N
 end
 
-@inline function apply_relaxation!(
-	state::Matrix{ComplexF64},
+@inline @inbounds function apply_relaxation!(
+	target_state::Matrix{ComplexF64},
+	source_state::Matrix{ComplexF64},
 	relaxation::MultiSystemMultiTRRelaxation,
 	upper::Int64,
 	kmax::Int64,
@@ -307,8 +345,21 @@ end
 		relaxation.E[t],
 		relaxation.D1[k, t],
 		relaxation.D2[k, t],
-		relaxation.E[t].y[m], # R1
-		relaxation.E[t].x[n] # R2
+		relaxation.E[t].y[m], # E1
+		relaxation.E[t].x[n] # E2
+	)
+
+	return
+end
+
+@inline @inbounds function apply_longitudinal_recovery!(
+	state::Matrix{ComplexF64},
+	relaxation::MultiSystemMultiTRRelaxation,
+	t::Int64
+)
+	@multi_system_longitudinal_recovery_iterate(
+		relaxation.E[t],
+		relaxation.E[t].y[m], # E1
 	)
 
 	return

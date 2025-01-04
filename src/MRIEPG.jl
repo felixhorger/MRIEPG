@@ -10,6 +10,7 @@ module MRIEPG
 	include("rf_pulses.jl")
 	include("diffusion.jl")
 	include("relaxation.jl")
+	include("gradient_shift.jl")
 	include("simulate.jl")
 	include("driven_equilibrium.jl")
 

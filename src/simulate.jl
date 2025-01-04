@@ -133,12 +133,7 @@ function simulate!(
 	# How many states are involved?
 	upper_systems = num_systems * upper
 
-	# Apply pulse
-	@inbounds @views mul!(
-	 	target_state[1:upper_systems, :],
-		source_state[1:upper_systems, :],
-		rf_matrices[:, :, trel]
-	)
+	apply_rf_pulse_matrices!(rf_matrices, source_state, target_state, trel, upper_systems)
 
 	# Store signal (F^-(k = 0)) or complete state
 	# TODO: this does not consider echo time. However, the effect of TE can
@@ -154,30 +149,11 @@ function simulate!(
 	=#
 
 	# Apply relaxation (T1, T2 and diffusion)
-	apply_relaxation!(target_state, relaxation, upper, kmax, trel)
-	# Note: time is "shifted" in relaxation since each segment has its own relaxation
+	apply_relaxation!(target_state, target_state, relaxation, upper, kmax, trel)
+	apply_longitudinal_recovery!(target_state, relaxation, trel)
+	# Note: trel is used because depends on TR index, not total time since simulation start.
 
-	# Shift (by gradients)
-	@inbounds @views let total_num_states = size(target_state, 1)
-		# F^+(k) goes to F^+(k+1), only for k > 0
-		# The first i is the first index of the k-state which is newly populated by the shift
-		#println("+") # Excuse the shotgun debug comment clutter
-		for i = min(upper_systems, total_num_states-num_systems) + 1 : -num_systems : num_systems+1
-			target_state[i:i+num_systems-1, 1] .= target_state[i-num_systems : i-1, 1]
-			#println("$(i-num_systems : i-1) -> $(i:i+num_systems-1)")
-		end
-		# F^+(k = 0) becomes the conjugate of F^-(k = -1)
-		target_state[1:num_systems, 1] .= conj.(target_state[num_systems+1 : 2*num_systems, 2])
-		# F^-(k) also goes to F^-(k+1), but k is ordered the other way around in the array
-		#println("-")
-		for i = 1:num_systems:(upper_systems-num_systems)
-			target_state[i : i+num_systems-1, 2] .= target_state[i+num_systems : i+2*num_systems-1, 2]
-			#println("$(i+num_systems : i+2*num_systems-1) -> $(i : i+num_systems-1)")
-		end
-		# F^-(k = -upper+1) becomes unpopulated
-		target_state[upper_systems-num_systems+1 : upper_systems, 2] .= 0
-		# Longitudinal states are not getting shifted
-	end
+	gradient_shift!(target_state, num_systems, upper_systems)
 
 	return
 end
